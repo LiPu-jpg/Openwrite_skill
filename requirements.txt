@@ -1,0 +1,9 @@
+# OpenWrite Skill — 运行时依赖
+pydantic>=2.0,<3.0
+pyyaml>=6.0
+
+# 开发依赖 (可选)
+# pytest>=8.0
+# pytest-cov>=5.0
+# mypy>=1.10
+# ruff>=0.5

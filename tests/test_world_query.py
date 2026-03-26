@@ -1,0 +1,228 @@
+"""WorldQuery 测试
+
+覆盖世界观查询工具的核心功能：
+- parse_entity() 解析各种 Markdown 格式
+- _parse_relations() 边界情况
+- list_entities() 列表与筛选
+- get_entity() 获取单个实体
+- get_relations_graph() 关系图谱汇总
+"""
+
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from tools.world_query import (
+    parse_entity,
+    _parse_relations,
+    _normalize_section,
+    list_entities,
+    get_entity,
+    get_relations_graph,
+)
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+# ── parse_entity ─────────────────────────────────────────────
+
+
+class TestParseEntity:
+    """解析单个 Markdown 实体文件"""
+
+    def test_full_entity(self):
+        entity = parse_entity(FIXTURES_DIR / "entity.md")
+        assert entity["id"] == "entity"
+        assert entity["name"] == "琅琊阁"
+        assert entity["type"] == "组织"
+        assert entity["subtype"] == "情报机构"
+        assert entity["status"] == "active"
+        assert "天下第一情报组织" in entity["description"]
+        assert len(entity["rules"]) == 3
+        assert len(entity["features"]) == 3
+        assert len(entity["relations"]) == 3
+
+    def test_minimal_entity(self):
+        entity = parse_entity(FIXTURES_DIR / "entity_minimal.md")
+        assert entity["name"] == "灵犀玉"
+        assert entity["type"] == "物品"
+        assert entity["subtype"] == "法器"
+        assert entity["rules"] == []
+        assert entity["relations"] == []
+
+    def test_entity_without_blockquote(self):
+        entity = parse_entity(FIXTURES_DIR / "entity_no_blockquote.md")
+        assert entity["name"] == "无名之地"
+        assert entity["type"] == ""  # 无 blockquote
+        assert len(entity["features"]) == 2
+
+
+# ── _parse_relations ─────────────────────────────────────────
+
+
+class TestParseRelations:
+    """关联列表解析测试"""
+
+    def test_em_dash_separator(self):
+        items = ["张三 — 现任阁主"]
+        result = _parse_relations(items)
+        assert len(result) == 1
+        assert result[0]["target"] == "张三"
+        assert result[0]["description"] == "现任阁主"
+
+    def test_hyphen_separator(self):
+        items = ["李四 - 敌对关系"]
+        result = _parse_relations(items)
+        assert result[0]["target"] == "李四"
+        assert result[0]["description"] == "敌对关系"
+
+    def test_en_dash_separator(self):
+        items = ["王五 – 盟友"]
+        result = _parse_relations(items)
+        assert result[0]["target"] == "王五"
+
+    def test_no_separator(self):
+        items = ["神秘实体"]
+        result = _parse_relations(items)
+        assert result[0]["target"] == "神秘实体"
+        assert result[0]["description"] == ""
+
+    def test_empty_list(self):
+        assert _parse_relations([]) == []
+
+    def test_multiple_items(self):
+        items = ["A — 关系1", "B — 关系2", "C"]
+        result = _parse_relations(items)
+        assert len(result) == 3
+
+
+# ── _normalize_section ───────────────────────────────────────
+
+
+class TestNormalizeSection:
+    def test_known_sections(self):
+        assert _normalize_section("规则") == "rules"
+        assert _normalize_section("特征") == "features"
+        assert _normalize_section("关联") == "relations"
+
+    def test_unknown_section(self):
+        assert _normalize_section("其他") == ""
+        assert _normalize_section("历史") == ""
+
+
+# ── list_entities ────────────────────────────────────────────
+
+
+class TestListEntities:
+    """列出实体摘要"""
+
+    @pytest.fixture
+    def entity_project(self, tmp_path):
+        """创建包含实体文件的项目"""
+        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir.mkdir(parents=True)
+
+        (entities_dir / "place_a.md").write_text(
+            "# 山海城\n\n> 地点 | 城市 | active\n\n繁华的贸易都市。\n",
+            encoding="utf-8",
+        )
+        (entities_dir / "org_b.md").write_text(
+            "# 天山派\n\n> 组织 | 门派 | active\n\n修仙门派。\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_list_all(self, entity_project):
+        result = list_entities("test", project_root=entity_project)
+        assert len(result) == 2
+        names = {e["name"] for e in result}
+        assert "山海城" in names
+        assert "天山派" in names
+
+    def test_list_by_type(self, entity_project):
+        result = list_entities("test", entity_type="组织", project_root=entity_project)
+        assert len(result) == 1
+        assert result[0]["name"] == "天山派"
+
+    def test_list_empty_dir(self, tmp_path):
+        entities_dir = tmp_path / "data" / "novels" / "empty" / "world" / "entities"
+        entities_dir.mkdir(parents=True)
+        result = list_entities("empty", project_root=tmp_path)
+        assert result == []
+
+    def test_list_nonexistent_dir(self, tmp_path):
+        result = list_entities("nonexistent", project_root=tmp_path)
+        assert result == []
+
+    def test_description_truncation(self, entity_project):
+        result = list_entities("test", project_root=entity_project)
+        for e in result:
+            assert len(e["description"]) <= 63  # 60 + "..."
+
+
+# ── get_entity ───────────────────────────────────────────────
+
+
+class TestGetEntity:
+    """获取单个实体详情"""
+
+    @pytest.fixture
+    def entity_project(self, tmp_path):
+        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir.mkdir(parents=True)
+        (entities_dir / "item_x.md").write_text(
+            "# 天命之剑\n\n> 物品 | 武器 | active\n\n传说中的神兵。\n\n## 规则\n\n- 只有天命之人能拔出\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_get_existing_entity(self, entity_project):
+        entity = get_entity("test", "item_x", project_root=entity_project)
+        assert entity is not None
+        assert entity["name"] == "天命之剑"
+        assert entity["type"] == "物品"
+        assert len(entity["rules"]) == 1
+
+    def test_get_nonexistent_entity(self, entity_project):
+        assert get_entity("test", "nope", project_root=entity_project) is None
+
+
+# ── get_relations_graph ──────────────────────────────────────
+
+
+class TestGetRelationsGraph:
+    """关系图谱汇总测试"""
+
+    @pytest.fixture
+    def relation_project(self, tmp_path):
+        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir.mkdir(parents=True)
+
+        (entities_dir / "a.md").write_text(
+            "# 实体A\n\n> 概念 | | active\n\n描述A\n\n## 关联\n\n- b — 依赖\n",
+            encoding="utf-8",
+        )
+        (entities_dir / "b.md").write_text(
+            "# 实体B\n\n> 概念 | | active\n\n描述B\n\n## 关联\n\n- a — 被依赖\n",
+            encoding="utf-8",
+        )
+        return tmp_path
+
+    def test_graph_structure(self, relation_project):
+        graph = get_relations_graph("test", project_root=relation_project)
+        assert "a" in graph["entities"]
+        assert "b" in graph["entities"]
+        assert len(graph["relations"]) == 2
+
+    def test_graph_empty_dir(self, tmp_path):
+        graph = get_relations_graph("nonexistent", project_root=tmp_path)
+        assert graph == {"entities": [], "relations": []}
+
+    def test_relation_details(self, relation_project):
+        graph = get_relations_graph("test", project_root=relation_project)
+        a_to_b = [r for r in graph["relations"] if r["source"] == "a" and r["target"] == "b"]
+        assert len(a_to_b) == 1
+        assert a_to_b[0]["description"] == "依赖"

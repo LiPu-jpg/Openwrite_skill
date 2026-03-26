@@ -1,0 +1,27 @@
+# 角色卡片模板 (YAML格式)
+# 文件路径: data/novels/{novel_id}/characters/cards/{character_id}.yaml
+
+id: zhang_san                    # 唯一标识（拼音或英文）
+name: 张三                        # 角色名称
+tier: protagonist                # 层级: protagonist | antagonist | supporting | background
+age: 18                          # 年龄（可选）
+identity: 书生                    # 身份/职业
+description: 落魄书生，性格正直但有些迂腐  # 简要描述
+
+first_appearance: ch_001         # 首次出场章节 ID（可选）
+
+relationships:                   # 角色关系（可选）
+  - character_id: li_si
+    relation_type: friend        # friend | enemy | family | lover | master | student
+    description: 好友
+
+status: active                   # 状态: active | archived | deceased
+
+# 以下是可选扩展字段
+tags:                            # 标签
+  - 主角
+  - 书生
+
+appearance:                      # 外貌特征（简短）
+  height: 中等
+  feature: 面容清瘦，常穿青衫

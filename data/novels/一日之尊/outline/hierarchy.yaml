@@ -1,0 +1,14 @@
+hierarchy:
+  arc_001:
+    title: "第一篇"
+    sections:
+      section_001:
+        title: "开篇"
+        chapters:
+          ch_001:
+            title: "第一章"
+            summary: "待填写"
+            target_words: 3000
+            involved_characters: []
+            foreshadowing_refs: []
+            status: outlined

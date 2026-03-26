@@ -1,0 +1,143 @@
+# AI痕迹检测词库
+# 文件路径: craft/ai_patterns.yaml
+# 用途: 检测文本中的AI生成痕迹，提供替换建议
+
+# 禁用词 - 必须替换
+banned_patterns:
+  - pattern: "嘴角微微上扬"
+    category: "表情描写"
+    severity: high
+    replacements:
+      - "笑了"
+      - "咧嘴一笑"
+      - "嘴角勾起"
+      - "面带微笑"
+      - "露出了笑容"
+
+  - pattern: "心中涌起一股"
+    category: "情绪描写"
+    severity: high
+    replacements:
+      - "心头一紧"
+      - "胸口发闷"
+      - "指尖微微颤抖"
+      - "握紧了拳头"
+
+  - pattern: "眼神中闪过一丝"
+    category: "眼神描写"
+    severity: high
+    replacements:
+      - "目光闪烁"
+      - "眼底掠过"
+      - "眸光微动"
+      - "眼帘低垂"
+
+  - pattern: "不禁"
+    category: "过度修饰"
+    severity: medium
+    replacements:
+      - ""  # 直接删除
+      - "忍不住"
+
+  - pattern: "不由得"
+    category: "过度修饰"
+    severity: medium
+    replacements:
+      - ""  # 直接删除
+      - "控制不住"
+
+  - pattern: "下意识地"
+    category: "过度修饰"
+    severity: medium
+    replacements:
+      - ""  # 直接删除
+      - "习惯性地"
+
+# AI套路词 - 建议替换
+cliched_patterns:
+  - pattern: "缓缓地"
+    category: "副词滥用"
+    severity: medium
+    replacements:
+      - ""  # 直接删除
+      - "慢慢"
+      - "渐渐"
+
+  - pattern: "轻轻地"
+    category: "副词滥用"
+    severity: medium
+    replacements:
+      - ""  # 直接删除
+      - "小心"
+
+  - pattern: "深深地"
+    category: "副词滥用"
+    severity: medium
+    replacements:
+      - ""  # 直接删除
+
+  - pattern: "微微的"
+    category: "模糊表达"
+    severity: low
+    replacements:
+      - "轻微的"
+      - "隐约的"
+
+  - pattern: "仿佛.*一样"
+    category: "比喻模式"
+    severity: medium
+    replacements:
+      - "直接描述感受或动作"
+
+  - pattern: "如同.*一般"
+    category: "比喻模式"
+    severity: medium
+    replacements:
+      - "直接描述感受或动作"
+
+# 信息倾倒模式
+info_dump_patterns:
+  - pattern: "连续3个以上长句(>100字)"
+    category: "信息倾倒"
+    severity: high
+    suggestion: "插入对话或短句调节节奏"
+
+  - pattern: "连续2个以上完整设定介绍"
+    category: "设定堆砌"
+    severity: medium
+    suggestion: "分散到后续章节逐步揭示"
+
+# 结构模式
+structure_patterns:
+  - pattern: "首先.*其次.*最后"
+    category: "AI结构"
+    severity: high
+    suggestion: "使用更自然的过渡"
+
+  - pattern: "总而言之"
+    category: "AI结构"
+    severity: medium
+    suggestion: "删除或使用更口语化的表达"
+
+  - pattern: "值得注意的是"
+    category: "AI结构"
+    severity: high
+    suggestion: "删除，直接陈述"
+
+# 检测配置
+detection_config:
+  # 严格程度: loose | normal | strict
+  default_strictness: normal
+  
+  # 每千字允许的AI痕迹数量
+  max_patterns_per_1000_words:
+    loose: 10
+    normal: 5
+    strict: 2
+
+  # 评分权重
+  scoring_weights:
+    banned_patterns: 3.0
+    cliched_patterns: 1.5
+    info_dump_patterns: 2.0
+    structure_patterns: 2.5
