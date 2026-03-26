@@ -603,6 +603,19 @@ def _cmd_agent(args) -> int:
                     "get_world_relations": lambda a: _exec_get_world_relations(project_root, a),
                     # 状态验证
                     "validate_truth": lambda a: _exec_validate_truth(project_root, a),
+                    # 对话质量
+                    "extract_dialogue_fingerprint": lambda a: _exec_extract_dialogue_fingerprint(
+                        project_root, a
+                    ),
+                    # 后置验证
+                    "validate_post_write": lambda a: _exec_validate_post_write(project_root, a),
+                    # 工作流
+                    "get_workflow_status": lambda a: _exec_get_workflow_status(project_root, a),
+                    "start_workflow": lambda a: _exec_start_workflow(project_root, a),
+                    "advance_workflow": lambda a: _exec_advance_workflow(project_root, a),
+                    # 文本处理
+                    "chunk_text": lambda a: _exec_chunk_text(project_root, a),
+                    "compress_section": lambda a: _exec_compress_section(project_root, a),
                 }
             )
 
@@ -1180,6 +1193,241 @@ def _exec_validate_truth(project_root: Path, args: dict) -> dict:
         ],
         "issue_count": len(issues),
         "critical_count": sum(1 for i in issues if i.severity == "critical"),
+    }
+
+
+# ── 对话质量 ────────────────────────────────────────────────
+
+
+def _exec_extract_dialogue_fingerprint(project_root: Path, args: dict) -> dict:
+    """执行 extract_dialogue_fingerprint"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.dialogue_fingerprint import DialogueFingerprintExtractor
+
+    novel_id = config.get("novel_id", "")
+    chapter_id = args.get("chapter_id", "latest")
+    character_names = args.get("character_names", [])
+
+    content = _load_chapter(project_root, novel_id, chapter_id)
+    if not content:
+        return {"error": f"未找到章节: {chapter_id}"}
+
+    extractor = DialogueFingerprintExtractor()
+    fingerprints = extractor.extract(
+        [content], character_names=character_names if character_names else None
+    )
+
+    return {
+        "chapter_id": chapter_id,
+        "fingerprints": [
+            {
+                "character": fp.character_name,
+                "avg_sentence_length": fp.avg_sentence_length,
+                "common_bigrams": fp.common_bigrams[:5],
+                "question_ratio": fp.question_ratio,
+                "speech_patterns": fp.speech_patterns[:5],
+                "summary": fp.to_prompt_text(),
+            }
+            for fp in fingerprints
+        ],
+    }
+
+
+# ── 后置验证 ────────────────────────────────────────────────
+
+
+def _exec_validate_post_write(project_root: Path, args: dict) -> dict:
+    """执行 validate_post_write"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.post_validator import PostWriteValidator
+
+    novel_id = config.get("novel_id", "")
+    chapter_id = args.get("chapter_id", "latest")
+
+    content = _load_chapter(project_root, novel_id, chapter_id)
+    if not content:
+        return {"error": f"未找到章节: {chapter_id}"}
+
+    validator = PostWriteValidator()
+    violations = validator.validate(content)
+
+    return {
+        "chapter_id": chapter_id,
+        "violations": [
+            {
+                "severity": v.severity,
+                "rule": v.rule,
+                "description": v.description,
+                "location": v.location,
+            }
+            for v in violations
+        ],
+        "error_count": sum(1 for v in violations if v.severity == "error"),
+        "warning_count": sum(1 for v in violations if v.severity == "warning"),
+        "passed": len(violations) == 0,
+    }
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+# ── 工作流调度 ────────────────────────────────────────────────
+
+
+def _exec_get_workflow_status(project_root: Path, args: dict) -> dict:
+    """执行 get_workflow_status"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.workflow_scheduler import WorkflowScheduler
+
+    novel_id = config.get("novel_id", "")
+    chapter_id = args.get("chapter_id")
+
+    scheduler = WorkflowScheduler(project_root, novel_id)
+
+    if chapter_id:
+        state = scheduler.load_workflow(chapter_id)
+        if state:
+            return {
+                "chapter_id": state.chapter_id,
+                "current_stage": state.current_stage,
+                "stages": {s.name: s.to_dict() for s in state.stage_records},
+                "is_complete": scheduler.is_complete(state),
+            }
+        return {"error": f"未找到工作流: {chapter_id}"}
+
+    active = scheduler.list_active()
+    complete = scheduler.list_complete()
+
+    return {
+        "active": active,
+        "complete": complete,
+        "active_count": len(active),
+    }
+
+
+def _exec_start_workflow(project_root: Path, args: dict) -> dict:
+    """执行 start_workflow"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.workflow_scheduler import WorkflowScheduler
+
+    novel_id = config.get("novel_id", "")
+    chapter_id = args.get("chapter_id", "")
+
+    scheduler = WorkflowScheduler(project_root, novel_id)
+    state = scheduler.create_workflow(chapter_id)
+
+    return {
+        "chapter_id": state.chapter_id,
+        "current_stage": state.current_stage,
+        "message": f"工作流已创建: {chapter_id}",
+    }
+
+
+def _exec_advance_workflow(project_root: Path, args: dict) -> dict:
+    """执行 advance_workflow"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.workflow_scheduler import WorkflowScheduler
+
+    novel_id = config.get("novel_id", "")
+    chapter_id = args.get("chapter_id", "")
+    stage_name = args.get("stage_name", "")
+
+    scheduler = WorkflowScheduler(project_root, novel_id)
+    state = scheduler.load_workflow(chapter_id)
+
+    if not state:
+        return {"error": f"未找到工作流: {chapter_id}"}
+
+    if stage_name:
+        scheduler.advance_to(state, stage_name)
+    else:
+        scheduler.advance(state)
+
+    scheduler.save_workflow(state)
+
+    return {
+        "chapter_id": state.chapter_id,
+        "current_stage": state.current_stage,
+        "message": f"已推进到: {state.current_stage}",
+    }
+
+
+# ── 文本处理 ────────────────────────────────────────────────
+
+
+def _exec_chunk_text(project_root: Path, args: dict) -> dict:
+    """执行 chunk_text"""
+    from tools.text_chunker import TextChunker
+
+    file_path = args.get("file_path", "")
+    chunk_size = args.get("chunk_size", 30000)
+
+    path = Path(file_path)
+    if not path.exists():
+        return {"error": f"文件不存在: {file_path}"}
+
+    chunker = TextChunker(chunk_size=chunk_size)
+
+    if path.is_file():
+        result = chunker.chunk_file(path)
+        chunks = [
+            {
+                "index": c.index,
+                "chapter_range": c.chapter_range,
+                "char_count": c.char_count,
+            }
+            for c in result.chunks
+        ]
+        return {
+            "file": str(path),
+            "total_chunks": len(chunks),
+            "chunks": chunks,
+        }
+
+    return {"error": "不支持的路径类型"}
+
+
+def _exec_compress_section(project_root: Path, args: dict) -> dict:
+    """执行 compress_section"""
+    from tools.progressive_compressor import ProgressiveCompressor
+
+    novel_id = args.get("novel_id", "")
+
+    compressor = ProgressiveCompressor(project_root, novel_id)
+
+    arc_id = args.get("arc_id", "arc_001")
+    section_id = args.get("section_id", "")
+
+    if section_id:
+        result = compressor.compress_section(arc_id, section_id)
+        return {
+            "arc_id": arc_id,
+            "section_id": section_id,
+            "compressed": result.compressed_text[:500] if result.compressed_text else "",
+            "compression_ratio": result.compression_ratio,
+        }
+
+    arc_result = compressor.compress_arc(arc_id)
+    return {
+        "arc_id": arc_id,
+        "compressed": arc_result.compressed_text[:500] if arc_result.compressed_text else "",
+        "compression_ratio": arc_result.compression_ratio,
     }
 
 

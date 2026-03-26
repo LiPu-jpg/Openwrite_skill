@@ -399,6 +399,95 @@ OPENWRITE_TOOLS = [
             "properties": {},
         },
     ),
+    # 对话质量
+    ToolDefinition(
+        name="extract_dialogue_fingerprint",
+        description="提取角色对话风格指纹，分析口头禅、用词习惯等。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节ID（默认最新）"},
+                "character_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "要分析的角色名列表",
+                },
+            },
+            "required": [],
+        },
+    ),
+    # 后置验证
+    ToolDefinition(
+        name="validate_post_write",
+        description="零成本规则检测，检查禁止句式、AI味、敏感词等。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节ID（默认最新）"},
+            },
+            "required": [],
+        },
+    ),
+    # 工作流
+    ToolDefinition(
+        name="get_workflow_status",
+        description="获取工作流状态，查看写作流程进度。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节ID（不填则列出所有）"},
+            },
+            "required": [],
+        },
+    ),
+    ToolDefinition(
+        name="start_workflow",
+        description="为指定章节启动写作工作流。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节ID"},
+            },
+            "required": ["chapter_id"],
+        },
+    ),
+    ToolDefinition(
+        name="advance_workflow",
+        description="推进工作流到下一阶段。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节ID"},
+                "stage_name": {"type": "string", "description": "目标阶段（可选）"},
+            },
+            "required": ["chapter_id"],
+        },
+    ),
+    # 文本处理
+    ToolDefinition(
+        name="chunk_text",
+        description="将大文本文件按章节边界切割为chunk。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "file_path": {"type": "string", "description": "文件路径"},
+                "chunk_size": {"type": "integer", "description": "chunk大小（默认30000）"},
+            },
+            "required": ["file_path"],
+        },
+    ),
+    ToolDefinition(
+        name="compress_section",
+        description="压缩节/篇的章节摘要。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "arc_id": {"type": "string", "description": "篇ID"},
+                "section_id": {"type": "string", "description": "节ID（不填则压缩整篇）"},
+            },
+            "required": [],
+        },
+    ),
 ]
 
 
@@ -423,6 +512,20 @@ OPENWRITE_SYSTEM_PROMPT = """你是 OpenWrite 小说创作引擎的 Agent。
 | create_character | 创建角色 |
 | get_truth_files | 读取真相文件 |
 | update_truth_file | 更新真相文件 |
+| create_foreshadowing | 创建伏笔 |
+| list_foreshadowing | 列出伏笔 |
+| update_foreshadowing | 更新伏笔状态 |
+| validate_foreshadowing | 验证伏笔DAG |
+| query_world | 查询世界观实体 |
+| get_world_relations | 获取关系图谱 |
+| validate_truth | 验证真相文件一致性 |
+| extract_dialogue_fingerprint | 提取对话风格指纹 |
+| validate_post_write | 后置规则验证 |
+| get_workflow_status | 查看工作流进度 |
+| start_workflow | 启动工作流 |
+| advance_workflow | 推进工作流 |
+| chunk_text | 切割大文本 |
+| compress_section | 压缩摘要 |
 | create_foreshadowing | 创建伏笔 |
 | list_foreshadowing | 列出伏笔 |
 | update_foreshadowing | 更新伏笔状态 |
