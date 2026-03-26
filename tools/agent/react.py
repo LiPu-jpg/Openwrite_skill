@@ -313,6 +313,92 @@ OPENWRITE_TOOLS = [
             "required": ["file_name", "content"],
         },
     ),
+    # 伏笔管理
+    ToolDefinition(
+        name="create_foreshadowing",
+        description="创建伏笔节点。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "伏笔ID（如 f001）"},
+                "content": {"type": "string", "description": "伏笔内容描述"},
+                "weight": {"type": "integer", "description": "权重 1-10，默认5"},
+                "layer": {"type": "string", "description": "层级（主线/支线/彩蛋）"},
+                "created_at": {"type": "string", "description": "埋设章节（如 ch_001）"},
+                "target_chapter": {"type": "string", "description": "预期回收章节（如 ch_015）"},
+            },
+            "required": ["node_id", "content"],
+        },
+    ),
+    ToolDefinition(
+        name="list_foreshadowing",
+        description="列出伏笔节点。可按状态/权重/层级过滤。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "description": "状态过滤（埋伏/待收/已收/废弃）"},
+                "min_weight": {"type": "integer", "description": "最小权重过滤"},
+                "layer": {"type": "string", "description": "层级过滤（主线/支线）"},
+            },
+            "required": [],
+        },
+    ),
+    ToolDefinition(
+        name="update_foreshadowing",
+        description="更新伏笔状态。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "node_id": {"type": "string", "description": "伏笔ID"},
+                "status": {"type": "string", "description": "新状态（埋伏/待收/已收/废弃）"},
+            },
+            "required": ["node_id", "status"],
+        },
+    ),
+    ToolDefinition(
+        name="validate_foreshadowing",
+        description="验证伏笔DAG，检查环和引用错误。",
+        parameters={
+            "type": "object",
+            "properties": {},
+        },
+    ),
+    # 状态验证
+    ToolDefinition(
+        name="validate_truth",
+        description="验证真相文件与章节内容的一致性。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "要验证的章节ID（默认最新章节）"},
+            },
+            "required": [],
+        },
+    ),
+    # 世界查询
+    ToolDefinition(
+        name="query_world",
+        description="查询世界观实体。可列出所有实体或获取单个实体详情。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "entity_id": {"type": "string", "description": "实体ID（不填则列出所有）"},
+                "type": {
+                    "type": "string",
+                    "description": "类型过滤（location/person/technique/item等）",
+                },
+            },
+            "required": [],
+        },
+    ),
+    ToolDefinition(
+        name="get_world_relations",
+        description="获取世界观关系图谱，展示实体间的关联。",
+        parameters={
+            "type": "object",
+            "properties": {},
+        },
+    ),
 ]
 
 
@@ -337,6 +423,13 @@ OPENWRITE_SYSTEM_PROMPT = """你是 OpenWrite 小说创作引擎的 Agent。
 | create_character | 创建角色 |
 | get_truth_files | 读取真相文件 |
 | update_truth_file | 更新真相文件 |
+| create_foreshadowing | 创建伏笔 |
+| list_foreshadowing | 列出伏笔 |
+| update_foreshadowing | 更新伏笔状态 |
+| validate_foreshadowing | 验证伏笔DAG |
+| query_world | 查询世界观实体 |
+| get_world_relations | 获取关系图谱 |
+| validate_truth | 验证真相文件一致性 |
 
 ## 工作流程
 

@@ -581,6 +581,7 @@ def _cmd_agent(args) -> int:
             # 注册工具执行器
             agent._register_tool_executors(
                 {
+                    # 写作相关
                     "write_chapter": lambda a: _exec_write_chapter(project_root, a),
                     "review_chapter": lambda a: _exec_review_chapter(project_root, a),
                     "get_status": lambda a: _exec_get_status(project_root),
@@ -590,6 +591,18 @@ def _cmd_agent(args) -> int:
                     "create_character": lambda a: _exec_create_character(project_root, a),
                     "get_truth_files": lambda a: _exec_get_truth_files(project_root),
                     "update_truth_file": lambda a: _exec_update_truth_file(project_root, a),
+                    # 伏笔管理
+                    "create_foreshadowing": lambda a: _exec_create_foreshadowing(project_root, a),
+                    "list_foreshadowing": lambda a: _exec_list_foreshadowing(project_root, a),
+                    "update_foreshadowing": lambda a: _exec_update_foreshadowing(project_root, a),
+                    "validate_foreshadowing": lambda a: _exec_validate_foreshadowing(
+                        project_root, a
+                    ),
+                    # 世界查询
+                    "query_world": lambda a: _exec_query_world(project_root, a),
+                    "get_world_relations": lambda a: _exec_get_world_relations(project_root, a),
+                    # 状态验证
+                    "validate_truth": lambda a: _exec_validate_truth(project_root, a),
                 }
             )
 
@@ -863,6 +876,136 @@ def _exec_update_truth_file(project_root: Path, args: dict) -> dict:
     return {"file": file_name, "size": len(content)}
 
 
+def _exec_create_foreshadowing(project_root: Path, args: dict) -> dict:
+    """执行 create_foreshadowing"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.foreshadowing_manager import ForeshadowingDAGManager
+
+    novel_id = config.get("novel_id", "")
+    node_id = args.get("node_id", "")
+    content = args.get("content", "")
+    weight = args.get("weight", 5)
+    layer = args.get("layer", "支线")
+    created_at = args.get("created_at", "")
+    target_chapter = args.get("target_chapter", "")
+
+    manager = ForeshadowingDAGManager(project_root, novel_id)
+    success = manager.create_node(
+        node_id=node_id,
+        content=content,
+        weight=weight,
+        layer=layer,
+        created_at=created_at,
+        target_chapter=target_chapter if target_chapter else None,
+    )
+
+    if success:
+        return {"node_id": node_id, "status": "created", "content": content}
+    else:
+        return {"error": f"伏笔节点已存在: {node_id}"}
+
+
+def _exec_list_foreshadowing(project_root: Path, args: dict) -> dict:
+    """执行 list_foreshadowing"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.foreshadowing_manager import ForeshadowingDAGManager
+
+    novel_id = config.get("novel_id", "")
+    status_filter = args.get("status")
+    min_weight = args.get("min_weight", 1)
+    layer = args.get("layer")
+
+    manager = ForeshadowingDAGManager(project_root, novel_id)
+
+    if status_filter:
+        nodes = []
+        dag = manager._load_dag()
+        for node_id, node in dag.nodes.items():
+            if dag.status.get(node_id) == status_filter:
+                if layer is None or node.layer == layer:
+                    if node.weight >= min_weight:
+                        nodes.append(
+                            {
+                                "id": node.id,
+                                "content": node.content,
+                                "weight": node.weight,
+                                "layer": node.layer,
+                                "status": node.status,
+                                "created_at": node.created_at,
+                                "target_chapter": node.target_chapter,
+                            }
+                        )
+    else:
+        pending = manager.get_pending_nodes(min_weight=min_weight, layer=layer)
+        nodes = [
+            {
+                "id": n.id,
+                "content": n.content,
+                "weight": n.weight,
+                "layer": n.layer,
+                "status": n.status,
+                "created_at": n.created_at,
+                "target_chapter": n.target_chapter,
+            }
+            for n in pending
+        ]
+
+    stats = manager.get_statistics()
+
+    return {
+        "nodes": nodes,
+        "total": stats["total"],
+        "by_status": stats["by_status"],
+        "by_layer": stats["by_layer"],
+    }
+
+
+def _exec_update_foreshadowing(project_root: Path, args: dict) -> dict:
+    """执行 update_foreshadowing"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.foreshadowing_manager import ForeshadowingDAGManager
+
+    novel_id = config.get("novel_id", "")
+    node_id = args.get("node_id", "")
+    new_status = args.get("status", "")
+
+    manager = ForeshadowingDAGManager(project_root, novel_id)
+    success = manager.update_node_status(node_id, new_status)
+
+    if success:
+        return {"node_id": node_id, "status": new_status}
+    else:
+        return {"error": f"伏笔节点不存在: {node_id}"}
+
+
+def _exec_validate_foreshadowing(project_root: Path, args: dict) -> dict:
+    """执行 validate_foreshadowing"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.foreshadowing_manager import ForeshadowingDAGManager
+
+    novel_id = config.get("novel_id", "")
+    manager = ForeshadowingDAGManager(project_root, novel_id)
+
+    is_valid, errors = manager.validate_dag()
+
+    return {
+        "valid": is_valid,
+        "errors": errors,
+    }
+
+
 def _load_config(project_root: Path) -> Optional[dict]:
     """加载项目配置"""
     config_path = project_root / "novel_config.yaml"
@@ -931,6 +1074,113 @@ def _get_latest_chapter(project_root: Path, novel_id: str) -> str:
         return f"ch_{latest:03d}"
 
     return "ch_001"
+
+
+# ── 世界查询 ────────────────────────────────────────────────
+
+
+def _exec_query_world(project_root: Path, args: dict) -> dict:
+    """执行 query_world"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.world_query import list_entities, get_entity
+
+    novel_id = config.get("novel_id", "")
+    entity_id = args.get("entity_id")
+    entity_type = args.get("type")
+
+    if entity_id:
+        entity = get_entity(novel_id, entity_id, project_root)
+        if entity:
+            return {
+                "entity": {
+                    "id": entity["id"],
+                    "name": entity["name"],
+                    "type": entity["type"],
+                    "subtype": entity["subtype"],
+                    "status": entity["status"],
+                    "description": entity["description"][:200] if entity["description"] else "",
+                    "rules": entity["rules"][:5] if entity["rules"] else [],
+                    "relations": entity["relations"][:10] if entity["relations"] else [],
+                }
+            }
+        return {"error": f"实体不存在: {entity_id}"}
+
+    entities = list_entities(novel_id, entity_type=entity_type, project_root=project_root)
+    return {
+        "entities": entities,
+        "count": len(entities),
+    }
+
+
+def _exec_get_world_relations(project_root: Path, args: dict) -> dict:
+    """执行 get_world_relations"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.world_query import get_relations_graph
+
+    novel_id = config.get("novel_id", "")
+    graph = get_relations_graph(novel_id, project_root)
+
+    return {
+        "entities": graph["entities"],
+        "relations": graph["relations"][:50],
+        "total_entities": len(graph["entities"]),
+        "total_relations": len(graph["relations"]),
+    }
+
+
+# ── 状态验证 ────────────────────────────────────────────────
+
+
+def _exec_validate_truth(project_root: Path, args: dict) -> dict:
+    """执行 validate_truth"""
+    config = _load_config(project_root)
+    if not config:
+        return {"error": "未找到项目配置"}
+
+    from tools.truth_manager import TruthFilesManager
+    from tools.state_validator import StateValidator
+
+    novel_id = config.get("novel_id", "")
+    chapter_id = args.get("chapter_id", "latest")
+
+    truth_manager = TruthFilesManager(project_root, novel_id)
+    truth = truth_manager.load_truth_files()
+
+    chapter_content = _load_chapter(project_root, novel_id, chapter_id) or ""
+
+    import re
+
+    chapter_num = 1
+    match = re.search(r"ch_(\d+)", chapter_id)
+    if match:
+        chapter_num = int(match.group(1))
+
+    validator = StateValidator()
+    issues = validator.validate(
+        current_state=truth.current_state,
+        content=chapter_content,
+        chapter_number=chapter_num,
+    )
+
+    return {
+        "chapter_id": chapter_id,
+        "issues": [
+            {
+                "severity": i.severity,
+                "category": i.category,
+                "description": i.description,
+            }
+            for i in issues
+        ],
+        "issue_count": len(issues),
+        "critical_count": sum(1 for i in issues if i.severity == "critical"),
+    }
 
 
 if __name__ == "__main__":
