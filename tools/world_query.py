@@ -162,10 +162,12 @@ def _parse_relations(items: List[str]) -> List[Dict[str, str]]:
         # Support both — (em dash) and - (hyphen) as separator
         match = re.match(r"^(\S+)\s*[—–-]\s*(.+)$", item)
         if match:
-            relations.append({
-                "target": match.group(1).strip(),
-                "description": match.group(2).strip(),
-            })
+            relations.append(
+                {
+                    "target": match.group(1).strip(),
+                    "description": match.group(2).strip(),
+                }
+            )
         else:
             relations.append({"target": item.strip(), "description": ""})
     return relations
@@ -181,7 +183,7 @@ def list_entities(
     这是 LLM 应该首先调用的函数 — 快速了解全局，无需读取每个文件。
     """
     root = (project_root or Path(__file__).parent.parent).resolve()
-    entities_dir = root / "data" / "novels" / novel_id / "world" / "entities"
+    entities_dir = root / "data" / "novels" / novel_id / "src" / "world" / "entities"
 
     if not entities_dir.exists():
         return []
@@ -193,14 +195,16 @@ def list_entities(
             continue
         desc = entity["description"]
         short_desc = desc[:60] + "..." if len(desc) > 60 else desc
-        results.append({
-            "id": entity["id"],
-            "name": entity["name"],
-            "type": entity["type"],
-            "subtype": entity["subtype"],
-            "status": entity["status"],
-            "description": short_desc,
-        })
+        results.append(
+            {
+                "id": entity["id"],
+                "name": entity["name"],
+                "type": entity["type"],
+                "subtype": entity["subtype"],
+                "status": entity["status"],
+                "description": short_desc,
+            }
+        )
 
     return results
 
@@ -212,7 +216,9 @@ def get_entity(
 ) -> Optional[Dict[str, Any]]:
     """获取单个实体的完整结构化数据。"""
     root = (project_root or Path(__file__).parent.parent).resolve()
-    filepath = root / "data" / "novels" / novel_id / "world" / "entities" / f"{entity_id}.md"
+    filepath = (
+        root / "data" / "novels" / novel_id / "src" / "world" / "entities" / f"{entity_id}.md"
+    )
 
     if not filepath.exists():
         return None
@@ -229,7 +235,7 @@ def get_relations_graph(
     不再依赖手动维护的 graph.yaml —— 关系数据直接从实体文件中提取。
     """
     root = (project_root or Path(__file__).parent.parent).resolve()
-    entities_dir = root / "data" / "novels" / novel_id / "world" / "entities"
+    entities_dir = root / "data" / "novels" / novel_id / "src" / "world" / "entities"
 
     if not entities_dir.exists():
         return {"entities": [], "relations": []}
@@ -241,16 +247,19 @@ def get_relations_graph(
         entity = parse_entity(f)
         all_entities.append(entity["id"])
         for rel in entity["relations"]:
-            all_relations.append({
-                "source": entity["id"],
-                "target": rel["target"],
-                "description": rel["description"],
-            })
+            all_relations.append(
+                {
+                    "source": entity["id"],
+                    "target": rel["target"],
+                    "description": rel["description"],
+                }
+            )
 
     return {"entities": all_entities, "relations": all_relations}
 
 
 # ─── CLI ────────────────────────────────────────────────────────────
+
 
 def _print_summary_table(entities: List[Dict[str, str]]):
     """打印实体摘要表。"""
