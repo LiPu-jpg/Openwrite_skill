@@ -72,6 +72,7 @@ class ContextBuilder:
 
         # 数据路径
         self.data_dir = project_root / "data" / "novels" / novel_id
+        self.src_dir = project_root / "data" / "novels" / novel_id / "src"
         self.ref_style_dir = (
             project_root / "data" / "reference_styles" / reference_style
             if reference_style
@@ -177,12 +178,18 @@ class ContextBuilder:
         if self._hierarchy_cache:
             return self._hierarchy_cache
 
-        outline_path = self.data_dir / "outline" / "hierarchy.yaml"
-        if not outline_path.exists():
-            # 返回空的层级
+        hierarchy_path = self.data_dir / "hierarchy.yaml"
+        if not hierarchy_path.exists():
+            src_outline = self.src_dir / "outline" / "outline.md"
+            if src_outline.exists():
+                from tools.outline_sync import sync_outline_to_hierarchy
+
+                sync_outline_to_hierarchy(self.src_dir, self.data_dir)
+
+        if not hierarchy_path.exists():
             return OutlineHierarchy(novel_id=self.novel_id)
 
-        data = self._load_yaml(outline_path)
+        data = self._load_yaml(hierarchy_path)
         hierarchy = self._parse_hierarchy_yaml(data)
         self._hierarchy_cache = hierarchy
         return hierarchy
@@ -263,7 +270,7 @@ class ContextBuilder:
             return profiles
 
         # 加载角色档案（静态信息）
-        profiles_dir = self.data_dir / "characters" / "profiles"
+        profiles_dir = self.src_dir / "characters"
         cards_dir = self.data_dir / "characters" / "cards"
 
         for char_id in character_ids:
@@ -448,9 +455,9 @@ class ContextBuilder:
                 return state
 
         # 2. 从大纲的 key_foreshadowing 字段
-        outline_path = self.data_dir / "outline" / "hierarchy.yaml"
-        if outline_path.exists():
-            outline_data = self._load_yaml(outline_path)
+        hierarchy_path = self.data_dir / "hierarchy.yaml"
+        if hierarchy_path.exists():
+            outline_data = self._load_yaml(hierarchy_path)
             fore_data = outline_data.get("key_foreshadowing", [])
             if fore_data:
                 state = self._parse_outline_foreshadowing(fore_data, chapter_id)
