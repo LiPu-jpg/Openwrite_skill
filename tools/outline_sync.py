@@ -55,6 +55,7 @@ def _parse_outline_md(content: str) -> Dict[str, Any]:
                         "id": f"sec_{len(sections) + 1:03d}",
                         "title": title,
                         "arc_id": arcs[current_arc_idx]["id"] if current_arc_idx >= 0 else None,
+                        "chapters": [],
                     }
                 )
                 current_sec_idx = len(sections) - 1
@@ -64,6 +65,8 @@ def _parse_outline_md(content: str) -> Dict[str, Any]:
                 chapters.append({"id": chapter_id, "title": title})
                 if current_arc_idx >= 0:
                     arcs[current_arc_idx]["chapters"].append(chapter_id)
+                if current_sec_idx >= 0:
+                    sections[current_sec_idx]["chapters"].append(chapter_id)
 
             i += 1
             continue
@@ -87,6 +90,9 @@ def _parse_outline_md(content: str) -> Dict[str, Any]:
                         arcs[current_arc_idx]["arc_structure"] = value
                     elif "情感" in key:
                         arcs[current_arc_idx]["arc_emotional_arc"] = value
+            elif key == "起止章节":
+                if current_arc_idx >= 0:
+                    arcs[current_arc_idx]["description"] = value
             elif key in ("节结构", "节情感", "节张力"):
                 if current_sec_idx >= 0:
                     if "结构" in key:
@@ -104,7 +110,7 @@ def _parse_outline_md(content: str) -> Dict[str, Any]:
                     elif "位置" in key:
                         chapters[-1]["dramatic_position"] = value
                     elif "焦点" in key:
-                        chapters[-1]["content_focus"] = value
+                        chapters[-1]["summary"] = value
 
             i += 1
             continue
