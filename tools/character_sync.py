@@ -1,0 +1,133 @@
+import yaml
+import re
+from pathlib import Path
+from typing import Dict, Any, List, Optional
+
+
+def sync_all_profiles_to_cards(src_dir: Path, data_dir: Path) -> None:
+    src_chars = src_dir / "characters"
+    if not src_chars.exists():
+        return
+
+    cards_dir = data_dir / "characters" / "cards"
+    cards_dir.mkdir(parents=True, exist_ok=True)
+
+    for md_file in src_chars.glob("*.md"):
+        card_data = parse_profile_to_card(md_file)
+        if card_data:
+            card_path = cards_dir / f"{md_file.stem}.yaml"
+            with open(card_path, "w", encoding="utf-8") as f:
+                yaml.dump(
+                    card_data, f, allow_unicode=True, default_flow_style=False, sort_keys=False
+                )
+
+
+def parse_profile_to_card(md_file: Path) -> Optional[Dict[str, Any]]:
+    with open(md_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    lines = content.split("\n")
+
+    name = ""
+    identity = ""
+    age = None
+    appearance = {}
+
+    current_section = None
+    appearance_lines = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            i += 1
+            continue
+
+        heading_match = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+        if heading_match:
+            level = len(heading_match.group(1))
+            title = heading_match.group(2).strip()
+
+            if level == 1:
+                name = title
+            elif level == 2:
+                if title in ("外貌", "外貌特征"):
+                    current_section = "appearance"
+                    appearance_lines = []
+                else:
+                    current_section = None
+            i += 1
+            continue
+
+        if current_section == "appearance":
+            item_match = re.match(r"^-\s*(.+)$", stripped)
+            if item_match:
+                item_text = item_match.group(1).strip()
+                if (
+                    "中等" in item_text
+                    or "偏瘦" in item_text
+                    or "偏胖" in item_text
+                    or "健壮" in item_text
+                ):
+                    appearance["build"] = item_text
+                elif (
+                    "黑眼圈" in item_text
+                    or "眼镜" in item_text
+                    or "疤痕" in item_text
+                    or "特征" in item_text
+                ):
+                    appearance["features"] = item_text
+                elif (
+                    "格子衫" in item_text
+                    or "西装" in item_text
+                    or "T恤" in item_text
+                    or "服装" in item_text
+                ):
+                    appearance["clothing"] = item_text
+                else:
+                    if "features" not in appearance:
+                        appearance["features"] = item_text
+                    else:
+                        appearance["clothing"] = item_text
+            elif stripped.startswith("#"):
+                current_section = None
+                i -= 1
+            else:
+                if appearance_lines:
+                    appearance_lines[-1] += " " + stripped
+                else:
+                    appearance_lines.append(stripped)
+            i += 1
+            continue
+
+        kv_match = re.match(r"^-\s*([^:]+):\s*(.+)$", stripped)
+        if kv_match:
+            key = kv_match.group(1).strip()
+            value = kv_match.group(2).strip()
+
+            if key in ("职业", "身份", "角色"):
+                identity = value
+            elif key in ("年龄", "岁数"):
+                age_match = re.search(r"\d+", value)
+                if age_match:
+                    age = int(age_match.group())
+
+        i += 1
+
+    if not name:
+        return None
+
+    card: Dict[str, Any] = {
+        "id": md_file.stem,
+        "name": name,
+        "identity": identity,
+        "age": age,
+        "tier": "supporting",
+    }
+
+    if appearance:
+        card["appearance"] = appearance
+
+    return card
