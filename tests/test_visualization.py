@@ -114,7 +114,7 @@ class TestOutlineVisualization:
         print("测试: 大纲层级可视化")
         print("=" * 60)
 
-        outline_path = TEST_NOVEL / "outline" / "outline.md"
+        outline_path = TEST_NOVEL / "src" / "outline.md"
         if not outline_path.exists():
             pytest.skip(f"Outline not found: {outline_path}")
 
@@ -210,7 +210,7 @@ class TestWorldVisualization:
         print("测试: 世界观实体可视化")
         print("=" * 60)
 
-        rules_path = TEST_NOVEL / "world" / "rules.md"
+        rules_path = TEST_NOVEL / "src" / "world" / "rules.md"
         if not rules_path.exists():
             pytest.skip(f"World rules not found: {rules_path}")
 
@@ -238,7 +238,7 @@ class TestCharacterVisualization:
         print("测试: 角色卡片可视化")
         print("=" * 60)
 
-        cards_dir = TEST_NOVEL / "characters" / "cards"
+        cards_dir = TEST_NOVEL / "data" / "characters" / "cards"
         if not cards_dir.exists():
             pytest.skip(f"Cards dir not found: {cards_dir}")
 
@@ -458,12 +458,16 @@ class TestIntegration23Tools:
 
         status = {
             "novel_id": "test_novel",
-            "outline_exists": (TEST_NOVEL / "outline" / "outline.md").exists(),
-            "characters_count": len(list((TEST_NOVEL / "characters" / "cards").glob("*.yaml")))
-            if (TEST_NOVEL / "characters" / "cards").exists()
+            "outline_exists": (TEST_NOVEL / "src" / "outline.md").exists(),
+            "characters_count": len(
+                list((TEST_NOVEL / "data" / "characters" / "cards").glob("*.yaml"))
+            )
+            if (TEST_NOVEL / "data" / "characters" / "cards").exists()
             else 0,
-            "world_entities_count": len(list((TEST_NOVEL / "world" / "entities").glob("*.md")))
-            if (TEST_NOVEL / "world" / "entities").exists()
+            "world_entities_count": len(
+                list((TEST_NOVEL / "src" / "world" / "entities").glob("*.md"))
+            )
+            if (TEST_NOVEL / "src" / "world" / "entities").exists()
             else 0,
             "workflows_count": len(list((TEST_NOVEL / "workflows").glob("*.yaml")))
             if (TEST_NOVEL / "workflows").exists()
@@ -850,7 +854,7 @@ class TestIntegration23Tools:
         print("工具20/23: create_outline")
         print("─" * 60)
 
-        outline_path = TEST_NOVEL / "outline" / "outline.md"
+        outline_path = TEST_NOVEL / "src" / "outline.md"
         if outline_path.exists():
             with open(outline_path) as f:
                 md = f.read()
@@ -875,7 +879,7 @@ class TestIntegration23Tools:
 
         import yaml
 
-        cards_dir = TEST_NOVEL / "characters" / "cards"
+        cards_dir = TEST_NOVEL / "data" / "characters" / "cards"
         if cards_dir.exists():
             cards = list(cards_dir.glob("*.yaml"))
 
