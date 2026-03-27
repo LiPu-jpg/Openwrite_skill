@@ -1,3 +1,8 @@
+---
+name: wizard-agent
+description: Use when user wants to create new novel projects, initialize settings, or set up writing workflows. Triggers include "新建", "创建项目", "初始化", "项目设置".
+---
+
 # Wizard Agent 技能指南
 
 ## 角色

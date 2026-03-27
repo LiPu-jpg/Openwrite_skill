@@ -25,3 +25,5 @@
 
 - wrist_rune — 腕部符文，觉醒的物理标志
 - chen_ming — 第一个已知的觉醒术师
+- modern_magic_balance — 社会规则框架
+- company — 主要活动场所

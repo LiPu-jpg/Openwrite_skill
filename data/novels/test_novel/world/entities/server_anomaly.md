@@ -26,3 +26,4 @@
 - company — 事件发生地
 - shufa_system — 使用了术法感知能力
 - chen_ming — 事件解决者
+- lin_yue — 事件关注者（日志异常发现者）

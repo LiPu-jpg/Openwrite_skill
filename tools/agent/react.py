@@ -526,13 +526,6 @@ OPENWRITE_SYSTEM_PROMPT = """你是 OpenWrite 小说创作引擎的 Agent。
 | advance_workflow | 推进工作流 |
 | chunk_text | 切割大文本 |
 | compress_section | 压缩摘要 |
-| create_foreshadowing | 创建伏笔 |
-| list_foreshadowing | 列出伏笔 |
-| update_foreshadowing | 更新伏笔状态 |
-| validate_foreshadowing | 验证伏笔DAG |
-| query_world | 查询世界观实体 |
-| get_world_relations | 获取关系图谱 |
-| validate_truth | 验证真相文件一致性 |
 
 ## 工作流程
 

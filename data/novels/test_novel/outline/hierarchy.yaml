@@ -1,87 +1,190 @@
-hierarchy:
-  arc_001:
+story_info:
+  title: "公司里的术师"
+  theme: "职场与修炼的荒诞平衡"
+  word_count_estimate: 25000
+
+arcs:
+  - id: arc_001
     title: "第一篇：觉醒篇"
+    description: "程序员陈明意外觉醒术师能力，在职场中隐藏身份找到平衡"
     arc_structure: "铺垫(sec01) → 发展(sec02) → 收束(sec03)"
     arc_emotional_arc: "日常 → 震惊 → 接受"
-    sections:
-      section_001:
-        title: "第一节：意外觉醒"
-        section_structure: "起(ch01) → 承(ch02) → 转(ch03) → 合(ch04)"
-        section_emotional_arc: "无聊 → 困惑 → 震惊 → 接受"
-        section_tension: "low → rising → peak → falling"
-        chapters:
-          ch_001:
-            title: "第一章：加班"
-            summary: "陈明深夜加班电脑蓝屏，烦躁拍键盘时指尖闪光修复了电脑，手腕浮现符文印记但他以为是眼花。"
-            dramatic_position: "起"
-            content_focus: "程序员陈明在深夜加班赶项目，电脑蓝屏后指尖闪过淡蓝色的光电脑自动恢复，手腕内侧浮现若隐若现的符文印记。"
-            target_words: 4000
-            involved_characters: [chen_ming, zhao_lei]
-            foreshadowing_refs:
-              - id: fs_wrist_rune
-                type: plant
-                description: "手腕符文印记首次出现，陈明误认为眼花幻觉"
-            status: outlined
-          ch_002:
-            title: "第二章：精力充沛的早晨"
-            summary: "陈明连续熬夜却精力充沛，赵磊调侃，午休时马克杯意外悬浮一秒，陈明开始觉得不对劲。"
-            dramatic_position: "承"
-            content_focus: "陈明精神异常好引起赵磊注意，茶水间马克杯短暂悬浮暗示能力觉醒，林月布置新需求增加压力。"
-            target_words: 3500
-            involved_characters: [chen_ming, zhao_lei, lin_yue]
-            foreshadowing_refs: []
-            status: outlined
-          ch_003:
-            title: "第三章：会议室事故"
-            summary: "项目评审会上陈明紧张导致能力失控，投影仪爆花白板笔乱飞，手腕符文剧烈发光，他确认觉醒是真实的。"
-            dramatic_position: "转"
-            content_focus: "林月主持会议时陈明能力失控造成混乱，符文发光印证第一章伏笔，陈明从震惊转为恐慌。"
-            target_words: 3500
-            involved_characters: [chen_ming, lin_yue, zhao_lei]
-            foreshadowing_refs:
-              - id: fs_wrist_rune
-                type: payoff
-                description: "符文在能力失控时剧烈发光，与第一章若隐若现的印记相互印证"
-            status: outlined
-          ch_004:
-            title: "第四章：程序员的逻辑"
-            summary: "陈明用程序员思维分析能力规律，发现与情绪和逻辑链思维相关，成功控制念力悬浮可乐罐，决定暂时隐瞒。"
-            dramatic_position: "合"
-            content_focus: "陈明在出租屋用电子表格记录触发条件，发现能力与清晰逻辑思维正相关，初步掌控后决定保密。"
-            target_words: 3500
-            involved_characters: [chen_ming]
-            foreshadowing_refs: []
-            status: outlined
-      section_002:
-        title: "第二节：隐藏身份"
-        section_structure: "起(ch05) → 承(ch06) → 合(ch07)"
-        section_emotional_arc: "谨慎 → 紧张 → 释然"
-        section_tension: "medium → peak → resolving"
-        chapters:
-          ch_005:
-            title: "第五章：术法修Bug"
-            summary: "陈明偷用术法辅助工作效率暴增，赵磊起疑偷偷观察，差点撞见陈明对屏幕比划手势。"
-            dramatic_position: "起"
-            content_focus: "陈明用感知力追踪代码逻辑、念力多线程调试，效率暴增但需要伪装，赵磊在工位后偷偷观察。"
-            target_words: 3500
-            involved_characters: [chen_ming, zhao_lei]
-            foreshadowing_refs: []
-            status: outlined
-          ch_006:
-            title: "第六章：线上事故"
-            summary: "周五深夜服务器严重故障，常规排查无果，陈明偷用术法感知数据流精准定位故障，但监控日志留下异常。"
-            dramatic_position: "承"
-            content_focus: "全组救火两小时无果，陈明在卫生间用术法感知服务器集群定位故障节点，谎称直觉但日志留痕。"
-            target_words: 3500
-            involved_characters: [chen_ming, zhao_lei, lin_yue]
-            foreshadowing_refs: []
-            status: outlined
-          ch_007:
-            title: "第七章：996与修炼"
-            summary: "陈明找到通勤冥想、上班低调用能力、下班练控制的平衡，赵磊抓不到证据，林月加了绩效，陈明自嘲觉醒是为了更高效996。"
-            dramatic_position: "合"
-            content_focus: "陈明在工作与修炼间找到平衡，赵磊起疑无果，林月给加绩效，结尾自嘲式收束全篇。"
-            target_words: 3500
-            involved_characters: [chen_ming, zhao_lei, lin_yue]
-            foreshadowing_refs: []
-            status: outlined
+    chapters:
+      - ch_001
+      - ch_002
+      - ch_003
+      - ch_004
+      - ch_005
+      - ch_006
+      - ch_007
+  - id: arc_002
+    title: "第二篇：暗流篇"
+    description: "陈明的秘密开始被周围人注意，危机与友情交织"
+    arc_structure: "发展(sec04) → 深化(sec05) → 危机(sec06)"
+    arc_emotional_arc: "适应 → 自信 → 危机感"
+    chapters:
+      - ch_008
+      - ch_009
+      - ch_010
+      - ch_011
+      - ch_012
+      - ch_013
+      - ch_014
+
+sections:
+  - id: sec_001
+    title: "第一节：意外觉醒"
+    arc_id: arc_001
+    section_structure: "起(ch01) → 承(ch02) → 转(ch03) → 合(ch04)"
+    section_emotional_arc: "无聊 → 困惑 → 震惊 → 接受"
+    section_tension: "low → rising → peak → falling"
+  - id: sec_002
+    title: "第二节：隐藏身份"
+    arc_id: arc_001
+    section_structure: "起(ch05) → 承(ch06) → 合(ch07)"
+    section_emotional_arc: "谨慎 → 紧张 → 释然"
+    section_tension: "medium → peak → resolving"
+  - id: sec_003
+    title: "第三节：平衡之道"
+    arc_id: arc_002
+    section_structure: "起(ch08) → 承(ch09) → 转(ch10) → 合(ch11)"
+    section_emotional_arc: "小心 → 自信 → 危机 → 紧张"
+    section_tension: "low → rising → peak → high"
+  - id: sec_004
+    title: "第四节：真相浮现"
+    arc_id: arc_002
+    section_structure: "起(ch12) → 承(ch13) → 转(ch14)"
+    section_emotional_arc: "紧张 → 恐惧 → 决断"
+    section_tension: "high → peak → resolving"
+
+chapters:
+  - id: ch_001
+    title: "第一章：加班"
+    summary: "陈明深夜加班电脑蓝屏，烦躁拍键盘时指尖闪光修复电脑，手腕浮现符文印记但他以为是眼花。"
+    word_count: 4000
+    dramatic_position: "起"
+    content_focus: "程序员陈明在深夜加班赶项目，电脑蓝屏后指尖闪过淡蓝色的光电脑自动恢复，手腕内侧浮现若隐若现的符文印记。"
+    involved_characters: [chen_ming, zhao_lei]
+    status: "done"
+  - id: ch_002
+    title: "第二章：精力充沛的早晨"
+    summary: "陈明连续熬夜却精力充沛，赵磊调侃，午休时马克杯意外悬浮一秒，陈明开始觉得不对劲。"
+    word_count: 3500
+    dramatic_position: "承"
+    content_focus: "陈明精神异常好引起赵磊注意，茶水间马克杯短暂悬浮暗示能力觉醒，林月布置新需求增加压力。"
+    involved_characters: [chen_ming, zhao_lei, lin_yue]
+    status: "done"
+  - id: ch_003
+    title: "第三章：会议室事故"
+    summary: "项目评审会上陈明紧张导致能力失控，投影仪爆花白板笔乱飞，手腕符文剧烈发光，他确认觉醒是真实的。"
+    word_count: 3500
+    dramatic_position: "转"
+    content_focus: "林月主持会议时陈明能力失控造成混乱，符文发光印证第一章伏笔，陈明从震惊转为恐慌。"
+    involved_characters: [chen_ming, lin_yue, zhao_lei]
+    status: "done"
+  - id: ch_004
+    title: "第四章：程序员的逻辑"
+    summary: "陈明用程序员思维分析能力规律，发现与情绪和逻辑链思维相关，成功控制念力悬浮可乐罐，决定暂时隐瞒。"
+    word_count: 3500
+    dramatic_position: "合"
+    content_focus: "陈明在出租屋用电子表格记录触发条件，发现能力与清晰逻辑思维正相关，初步掌控后决定保密。"
+    involved_characters: [chen_ming]
+    status: "done"
+  - id: ch_005
+    title: "第五章：术法修Bug"
+    summary: "陈明偷用术法辅助工作效率暴增，赵磊起疑偷偷观察，差点撞见陈明对屏幕比划手势。"
+    word_count: 3500
+    dramatic_position: "起"
+    content_focus: "陈明用感知力追踪代码逻辑、念力多线程调试，效率暴增但需要伪装，赵磊在工位后偷偷观察。"
+    involved_characters: [chen_ming, zhao_lei]
+    status: "done"
+  - id: ch_006
+    title: "第六章：线上事故"
+    summary: "周五深夜服务器严重故障，常规排查无果，陈明偷用术法感知数据流精准定位故障，但监控日志留下异常。"
+    word_count: 3500
+    dramatic_position: "承"
+    content_focus: "全组救火两小时无果，陈明在卫生间用术法感知服务器集群定位故障节点，谎称直觉但日志留痕。"
+    involved_characters: [chen_ming, zhao_lei, lin_yue]
+    status: "done"
+  - id: ch_007
+    title: "第七章：996与修炼"
+    summary: "陈明找到通勤冥想、上班低调用能力、下班练控制的平衡，赵磊抓不到证据，林月加了绩效，陈明自嘲觉醒是为了更高效996。"
+    word_count: 3500
+    dramatic_position: "合"
+    content_focus: "陈明在工作与修炼间找到平衡，赵磊起疑无果，林月给加绩效，结尾自嘲式收束全篇。"
+    involved_characters: [chen_ming, zhao_lei, lin_yue]
+    status: "done"
+  - id: ch_008
+    title: "第八章：赵磊的直觉"
+    summary: "赵磊决定调查陈明，开始记录异常行为，在茶水间偶遇陈明自言自语，差点发现真相。"
+    word_count: 3500
+    dramatic_position: "起"
+    content_focus: "赵磊开始系统观察陈明的异常行为，茶水间偶遇触发危机感。"
+    involved_characters: [chen_ming, zhao_lei]
+    status: "done"
+  - id: ch_009
+    title: "第九章：绩效与风险"
+    summary: "林月注意到陈明的绩效异常优秀，开始关注服务器日志异常波动。陈明不知道自己已经被注意。"
+    word_count: 3500
+    dramatic_position: "承"
+    content_focus: "林月深入调查，陈明的优秀表现反而带来风险。"
+    involved_characters: [chen_ming, lin_yue, zhao_lei]
+    status: "draft"
+  - id: ch_010
+    title: "第十章：暴露危机"
+    summary: "林月约陈明单独谈话，暗示知道他有些不一样。陈明紧张到差点失控，勉强过关。"
+    word_count: 3500
+    dramatic_position: "转"
+    content_focus: "林月摊牌，陈明面临最大危机，用程序员冷静分析应对。"
+    involved_characters: [chen_ming, lin_yue]
+    status: "draft"
+  - id: ch_011
+    title: "第十一章：深夜练习"
+    summary: "陈明决定更谨慎练习，在深夜公园练习时被夜跑路人看到影子，新危机酝酿。"
+    word_count: 3500
+    dramatic_position: "合"
+    content_focus: "能力暴露风险增加，陈明陷入更深的困境。"
+    involved_characters: [chen_ming]
+    status: "draft"
+  - id: ch_012
+    title: "第十二章：日志追踪"
+    summary: "技术部门开始调查日志异常，林月配合调查，赵磊意外成为陈明的帮手。"
+    word_count: 3500
+    dramatic_position: "起"
+    content_focus: "多方势力交织，赵磊的选择成为关键转折。"
+    involved_characters: [chen_ming, zhao_lei, lin_yue]
+    status: "draft"
+  - id: ch_013
+    title: "第十三章：赵磊的抉择"
+    summary: "赵磊发现陈明秘密后选择帮助，两个好友深夜长谈，友情经受考验。"
+    word_count: 3500
+    dramatic_position: "承"
+    content_focus: "赵磊选择站在陈明这边，兄弟情谊加深。"
+    involved_characters: [chen_ming, zhao_lei]
+    status: "draft"
+  - id: ch_014
+    title: "第十四章：暂时的平衡"
+    summary: "在赵磊帮助下日志异常被解释为系统波动，陈明暂时安全，但更大危机正在酝酿。"
+    word_count: 3500
+    dramatic_position: "合"
+    content_focus: "新平衡建立，但故事远未结束。"
+    involved_characters: [chen_ming, zhao_lei, lin_yue]
+    status: "draft"
+
+key_foreshadowing:
+  - id: fs_wrist_rune
+    description: "手腕符文印记，术师觉醒的标志"
+    planted_in: ch_001
+    recovered_in: ch_003
+  - id: fs_server_anomaly
+    description: "服务器异常日志，术法使用的隐患"
+    planted_in: ch_006
+    recovered_in: ch_010
+  - id: fs_zhao_suspicion
+    description: "赵磊开始怀疑陈明"
+    planted_in: ch_005
+    recovered_in: ch_008
+  - id: fs_lin_yue_observation
+    description: "林月注意到团队效率变化"
+    planted_in: ch_006
+    recovered_in: ch_009

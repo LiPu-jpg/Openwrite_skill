@@ -116,6 +116,21 @@ def parse_profile_to_card(md_file: Path) -> Optional[Dict[str, Any]]:
 
         i += 1
 
+    for line_text in appearance_lines:
+        parts = [p.strip() for p in line_text.split("，") if p.strip()]
+        for part in parts:
+            if any(k in part for k in ["中等", "偏瘦", "偏胖", "健壮", "肥胖", "苗条"]):
+                appearance["build"] = part
+            elif any(k in part for k in ["黑眼圈", "眼镜", "疤痕", "特征", "痘痘", "纹身"]):
+                appearance["features"] = part
+            elif any(k in part for k in ["格子衫", "西装", "T恤", "服装", "裙子", "裤子", "外套"]):
+                appearance["clothing"] = part
+            else:
+                if "features" not in appearance:
+                    appearance["features"] = part
+                elif "clothing" not in appearance:
+                    appearance["clothing"] = part
+
     if not name:
         return None
 

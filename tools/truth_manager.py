@@ -1,13 +1,15 @@
-"""真相文件管理器 - 从 InkOS 融合
+"""真相文件管理器
 
-管理 7 个真相文件：
-1. current_state.md - 世界当前状态
-2. particle_ledger.md - 资源账本
-3. pending_hooks.md - 伏笔列表
-4. chapter_summaries.md - 章节摘要
-5. subplot_board.md - 支线进度
-6. emotional_arcs.md - 情感弧线
-7. character_matrix.md - 角色关系矩阵
+管理 3 个运行时状态文件（已融合到对应模块）：
+1. world/current_state.md - 世界当前状态
+2. world/ledger.md - 资源账本
+3. characters/relationships.md - 角色关系矩阵
+
+注意：
+- 章节摘要 → outline/hierarchy.yaml + compressed/
+- 伏笔列表 → foreshadowing/dag.yaml
+- 情感弧线 → outline hierarchy 的 arc/section_emotional_arc
+- 支线进度 → outline hierarchy
 
 支持状态快照和回滚。
 """
@@ -26,14 +28,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TruthFiles:
-    """真相文件集合"""
+    """真相文件集合（精简版）"""
 
     current_state: str = ""
     particle_ledger: str = ""
-    pending_hooks: str = ""
-    chapter_summaries: str = ""
-    subplot_board: str = ""
-    emotional_arcs: str = ""
     character_matrix: str = ""
 
 
@@ -50,6 +48,11 @@ class StateSnapshot:
 class TruthFilesManager:
     """真相文件管理器
 
+    文件分布：
+    - world/current_state.md - 世界当前状态
+    - world/ledger.md - 资源账本
+    - characters/relationships.md - 角色关系矩阵
+
     用法:
         manager = TruthFilesManager(project_root, novel_id)
 
@@ -59,7 +62,6 @@ class TruthFilesManager:
         # 更新真相文件
         manager.update_truth_files(truth, {
             "current_state": "新状态...",
-            "chapter_summary": "第5章：..."
         })
 
         # 创建快照
@@ -69,55 +71,47 @@ class TruthFilesManager:
         manager.restore_snapshot("snapshot_5")
     """
 
-    TRUTH_FILES = [
-        "current_state.md",
-        "particle_ledger.md",
-        "pending_hooks.md",
-        "chapter_summaries.md",
-        "subplot_board.md",
-        "emotional_arcs.md",
-        "character_matrix.md",
-    ]
+    TRUTH_FILES = {
+        "current_state": "current_state.md",
+        "particle_ledger": "ledger.md",
+        "character_matrix": "relationships.md",
+    }
 
     def __init__(self, project_root: Path, novel_id: str):
         self.project_root = project_root.resolve()
         self.novel_id = novel_id
-        self.story_dir = project_root / "data" / "novels" / novel_id / "story"
+        self.world_dir = project_root / "data" / "novels" / novel_id / "world"
+        self.characters_dir = project_root / "data" / "novels" / novel_id / "characters"
         self.snapshots_dir = project_root / "data" / "novels" / novel_id / "snapshots"
 
-    @property
-    def truth_dir(self) -> Path:
-        """真相文件目录"""
-        return self.story_dir
+    def _get_file_path(self, attr_name: str) -> Path:
+        """获取文件路径"""
+        if attr_name == "current_state":
+            return self.world_dir / "current_state.md"
+        elif attr_name == "particle_ledger":
+            return self.world_dir / "ledger.md"
+        elif attr_name == "character_matrix":
+            return self.characters_dir / "relationships.md"
+        raise ValueError(f"Unknown truth file: {attr_name}")
 
     def ensure_dirs(self):
         """确保目录存在"""
-        self.truth_dir.mkdir(parents=True, exist_ok=True)
+        self.world_dir.mkdir(parents=True, exist_ok=True)
+        self.characters_dir.mkdir(parents=True, exist_ok=True)
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
 
     def load_truth_files(self) -> TruthFiles:
         """加载所有真相文件"""
         truth = TruthFiles()
 
-        for attr_name, filename in zip(
-            [
-                "current_state",
-                "particle_ledger",
-                "pending_hooks",
-                "chapter_summaries",
-                "subplot_board",
-                "emotional_arcs",
-                "character_matrix",
-            ],
-            self.TRUTH_FILES,
-        ):
-            file_path = self.truth_dir / filename
+        for attr_name in ["current_state", "particle_ledger", "character_matrix"]:
+            file_path = self._get_file_path(attr_name)
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding="utf-8")
                     setattr(truth, attr_name, content)
                 except Exception as e:
-                    logger.warning(f"Failed to load {filename}: {e}")
+                    logger.warning(f"Failed to load {attr_name}: {e}")
 
         return truth
 
@@ -125,33 +119,19 @@ class TruthFilesManager:
         """保存所有真相文件"""
         self.ensure_dirs()
 
-        for attr_name, filename in zip(
-            [
-                "current_state",
-                "particle_ledger",
-                "pending_hooks",
-                "chapter_summaries",
-                "subplot_board",
-                "emotional_arcs",
-                "character_matrix",
-            ],
-            self.TRUTH_FILES,
-        ):
+        for attr_name in ["current_state", "particle_ledger", "character_matrix"]:
             content = getattr(truth, attr_name, "")
-            file_path = self.truth_dir / filename
+            file_path = self._get_file_path(attr_name)
             try:
                 file_path.write_text(content, encoding="utf-8")
             except Exception as e:
-                logger.warning(f"Failed to save {filename}: {e}")
+                logger.warning(f"Failed to save {attr_name}: {e}")
 
     def update_truth_files(self, truth: TruthFiles, updates: Dict[str, str]):
         """更新指定的真相文件"""
         for key, value in updates.items():
             if hasattr(truth, key):
                 setattr(truth, key, value)
-            elif key == "chapter_summary":
-                # 追加到 chapter_summaries
-                truth.chapter_summaries += f"\n\n{value}"
 
         self.save_truth_files(truth)
 
@@ -175,10 +155,6 @@ class TruthFilesManager:
             "files": {
                 "current_state": truth.current_state,
                 "particle_ledger": truth.particle_ledger,
-                "pending_hooks": truth.pending_hooks,
-                "chapter_summaries": truth.chapter_summaries,
-                "subplot_board": truth.subplot_board,
-                "emotional_arcs": truth.emotional_arcs,
                 "character_matrix": truth.character_matrix,
             },
         }
@@ -207,10 +183,6 @@ class TruthFilesManager:
             truth = TruthFiles(
                 current_state=snapshot["files"].get("current_state", ""),
                 particle_ledger=snapshot["files"].get("particle_ledger", ""),
-                pending_hooks=snapshot["files"].get("pending_hooks", ""),
-                chapter_summaries=snapshot["files"].get("chapter_summaries", ""),
-                subplot_board=snapshot["files"].get("subplot_board", ""),
-                emotional_arcs=snapshot["files"].get("emotional_arcs", ""),
                 character_matrix=snapshot["files"].get("character_matrix", ""),
             )
 

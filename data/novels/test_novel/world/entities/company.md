@@ -27,3 +27,4 @@
 - zhao_lei — 员工（同组同事）
 - lin_yue — 组长（直属上司）
 - server_anomaly — 服务器异常事件
+- shufa_system — 术法能力使用场所

@@ -26,3 +26,5 @@
 - shufa_system — 术法体系
 - company — 职场环境
 - chen_ming — 实践者
+- zhao_lei — 观察者
+- lin_yue — 潜在发现者

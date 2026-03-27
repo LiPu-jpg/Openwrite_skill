@@ -132,17 +132,18 @@ class ContextBuilder:
         if hierarchy and hasattr(hierarchy, "get_dramatic_context"):
             dramatic_context = hierarchy.get_dramatic_context(chapter_id)
 
-        # 9. 加载真相文件（融合 InkOS 7 个真相文件）
+        # 9. 加载运行时状态文件
         truth = self.truth_manager.load_truth_files()
 
-        # 10. POV 感知过滤（融合 InkOS pov-filter.ts）
-        pov_character = self._get_pov_character(current_chapter)
-        filtered_hooks = truth.pending_hooks
-        if pov_character and truth.pending_hooks:
-            filtered_hooks = self.truth_manager.filter_hooks_by_pov(
-                truth.pending_hooks,
-                pov_character,
-                truth.chapter_summaries,
+        # 10. pending_hooks 现在从 foreshadowing state 获取
+        # 伏笔状态已在前面加载到 foreshadowing 变量中
+        pending_hooks_str = ""
+        if foreshadowing and hasattr(foreshadowing, "pending"):
+            pending_hooks_str = "\n".join(
+                [
+                    f"- [{n.get('id', '?')}] {n.get('content', '')[:50]}..."
+                    for n in foreshadowing.pending[:10]
+                ]
             )
 
         # 11. 构建 context
@@ -161,7 +162,9 @@ class ContextBuilder:
             emotion_arc=emotion_arc,
             dramatic_context=dramatic_context,
             current_state=truth.current_state,
-            pending_hooks=filtered_hooks,
+            pending_hooks=pending_hooks_str,
+            particle_ledger=truth.particle_ledger,
+            chapter_summaries="",  # 章节摘要现在从大纲 hierarchy 或 compressed/ 获取
         )
 
         # 12. 动态压缩（如果超限）
@@ -460,12 +463,18 @@ class ContextBuilder:
         """解析伏笔 DAG 数据"""
         state = ForeshadowingState()
 
-        nodes = dag_data.get("nodes", [])
+        nodes_raw = dag_data.get("nodes", [])
+        if isinstance(nodes_raw, dict):
+            nodes_list = list(nodes_raw.values())
+        else:
+            nodes_list = nodes_raw
 
         # 解析章节序号
         current_idx = self._parse_chapter_index(chapter_id)
 
-        for node in nodes:
+        for node in nodes_list:
+            if not isinstance(node, dict):
+                continue
             status = node.get("status", "埋伏")
             planted_in = node.get("created_at", node.get("planted_in", ""))
             target_chapter = node.get("target_chapter", "")

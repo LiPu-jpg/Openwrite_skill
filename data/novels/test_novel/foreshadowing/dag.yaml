@@ -1,3 +1,78 @@
-# 伏笔DAG
-nodes: []
-edges: []
+nodes:
+  f001:
+    id: f001
+    content: 手腕符文印记 - 陈明加班时手腕若隐若现的淡蓝色符文
+    weight: 8
+    layer: 主线
+    status: 待收
+    created_at: arc_001/sec_001
+    target_arc: arc_001
+    target_section: sec_001
+    target_chapter: ch_003
+    tags: []
+  f002:
+    id: f002
+    content: 术法觉醒标志 - 符文在能力失控时剧烈发光，与符文印记相互印证
+    weight: 7
+    layer: 主线
+    status: 已收
+    created_at: arc_001/sec_001
+    target_arc: arc_001
+    target_section: sec_001
+    target_chapter: ch_003
+    tags: []
+  f003:
+    id: f003
+    content: 服务器日志异常 - 陈明用术法定位故障节点时留下的监控异常
+    weight: 6
+    layer: 主线
+    status: 待收
+    created_at: arc_001/sec_002
+    target_arc: arc_002
+    target_section: sec_002
+    target_chapter: null
+    tags: []
+  f004:
+    id: f004
+    content: 赵磊的怀疑 - 他开始记录陈明的异常行为
+    weight: 5
+    layer: 支线
+    status: 待收
+    created_at: arc_002/sec_001
+    target_arc: arc_002
+    target_section: sec_002
+    target_chapter: null
+    tags: []
+  f005:
+    id: f005
+    content: 林月的关注 - 她注意到陈明绩效异常，开始调查日志
+    weight: 6
+    layer: 主线
+    status: 待收
+    created_at: arc_002/sec_001
+    target_arc: arc_002
+    target_section: sec_001
+    target_chapter: null
+    tags: []
+  f006:
+    id: f006
+    content: 深夜公园练习 - 陈明被夜跑路人看到影子
+    weight: 4
+    layer: 支线
+    status: 待收
+    created_at: arc_002/sec_001
+    target_arc: arc_002
+    target_section: null
+    target_chapter: null
+    tags: []
+edges:
+- from: f001
+  to: f002
+  type: 依赖
+status:
+  f001: 待收
+  f002: 已收
+  f003: 待收
+  f004: 待收
+  f005: 待收
+  f006: 待收

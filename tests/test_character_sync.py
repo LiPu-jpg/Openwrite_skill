@@ -30,4 +30,9 @@ def test_profile_to_card_sync(tmp_path):
     assert card["name"] == "陈明"
     assert card["identity"] == "程序员"
     assert card["age"] == 28
+    assert "appearance" in card, "Appearance should be parsed"
+    appearance = card["appearance"]
+    assert appearance["build"] == "中等偏瘦", f"Expected 中等偏瘦, got {appearance.get('build')}"
+    assert appearance["features"] == "黑眼圈明显"
+    assert appearance["clothing"] == "格子衫"
     print(f"Generated card: {card}")
