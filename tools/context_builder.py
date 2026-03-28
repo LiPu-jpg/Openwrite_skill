@@ -1,6 +1,6 @@
 """上下文构建器 - 组装生成所需的所有上下文
 
-这是 OpenCode Skill 迁移的核心组件，负责：
+这是上下文组装的核心组件，负责：
 1. 加载大纲窗口（前后 N 章）
 2. 识别并加载出场角色
 3. 查询伏笔状态（待回收/已埋下）
@@ -70,9 +70,10 @@ class ContextBuilder:
         self.novel_id = novel_id
         self.reference_style = reference_style
 
-        # 数据路径
-        self.data_dir = project_root / "data" / "novels" / novel_id
-        self.src_dir = project_root / "data" / "novels" / novel_id / "src"
+        # 数据路径（仅支持新布局）
+        self.novel_dir = project_root / "data" / "novels" / novel_id
+        self.src_dir = self.novel_dir / "src"
+        self.data_dir = self.novel_dir / "data"
         self.ref_style_dir = (
             project_root / "data" / "reference_styles" / reference_style
             if reference_style
@@ -80,7 +81,7 @@ class ContextBuilder:
         )
         self.craft_dir = project_root / "craft"
 
-        # 真相文件管理器（融合 InkOS）
+        # 真相文件管理器
         self.truth_manager = TruthFilesManager(project_root, novel_id)
 
         # 缓存
@@ -180,7 +181,7 @@ class ContextBuilder:
 
         hierarchy_path = self.data_dir / "hierarchy.yaml"
         if not hierarchy_path.exists():
-            src_outline = self.src_dir / "outline" / "outline.md"
+            src_outline = self.src_dir / "outline.md"
             if src_outline.exists():
                 from tools.outline_sync import sync_outline_to_hierarchy
 
@@ -217,9 +218,26 @@ class ContextBuilder:
                 node_type=OutlineNodeType.ARC,
                 title=arc.get("title", ""),
                 summary=arc.get("description", ""),
+                arc_structure=arc.get("arc_structure", ""),
+                arc_emotional_arc=arc.get("arc_emotional_arc", ""),
                 children_ids=arc.get("chapters", []),
             )
             hierarchy.arcs.append(arc_node)
+
+        # 解析节纲
+        sections_data = data.get("sections", [])
+        for idx, sec in enumerate(sections_data):
+            section_node = OutlineNode(
+                node_id=sec.get("id", f"sec_{idx + 1:03d}"),
+                node_type=OutlineNodeType.SECTION,
+                title=sec.get("title", ""),
+                parent_id=sec.get("arc_id", ""),
+                section_structure=sec.get("section_structure", ""),
+                section_emotional_arc=sec.get("section_emotional_arc", ""),
+                section_tension=sec.get("section_tension", ""),
+                children_ids=sec.get("chapters", []),
+            )
+            hierarchy.sections.append(section_node)
 
         # 解析章节
         chapters_data = data.get("chapters", [])
@@ -230,7 +248,12 @@ class ContextBuilder:
                 title=ch.get("title", ""),
                 summary=ch.get("summary", ""),
                 word_count_target=ch.get("word_count", 6000),
+                estimated_words=ch.get("word_count", 6000),
                 goals=ch.get("goals", []),
+                dramatic_position=ch.get("dramatic_position", ""),
+                content_focus=ch.get("content_focus", ch.get("summary", "")),
+                involved_characters=ch.get("involved_characters", []),
+                involved_settings=ch.get("involved_settings", []),
                 status=ch.get("status", "draft"),
             )
             hierarchy.chapters.append(chapter_node)
@@ -266,6 +289,16 @@ class ContextBuilder:
             return profiles
 
         character_ids = chapter.involved_characters
+        if not character_ids:
+            section = hierarchy.get_parent_section(chapter_id)
+            if section:
+                agg: List[str] = []
+                for ch_id in section.children_ids:
+                    node = hierarchy.get_node(ch_id)
+                    if node and node.involved_characters:
+                        agg.extend(node.involved_characters)
+                character_ids = list(dict.fromkeys(agg))
+
         if not character_ids:
             return profiles
 
@@ -643,20 +676,26 @@ class ContextBuilder:
         if not self.data_dir.exists():
             return setting
 
-        # 加载世界观规则
-        world_path = self.data_dir / "world" / "rules.md"
+        # 加载世界观规则（优先 src）
+        world_path = self.src_dir / "world" / "rules.md"
+        if not world_path.exists():
+            world_path = self.data_dir / "world" / "rules.md"
         if world_path.exists():
             text = self._load_text(world_path)
             setting["worldbuilding"] = text[:1000]
 
         # 加载术语表
-        term_path = self.data_dir / "world" / "terminology.md"
+        term_path = self.src_dir / "world" / "terminology.md"
+        if not term_path.exists():
+            term_path = self.data_dir / "world" / "terminology.md"
         if term_path.exists():
             text = self._load_text(term_path)
             setting["terminology"] = text[:500]
 
-        # 加载角色设定（从 characters/profiles/ 目录汇总）
-        profiles_dir = self.data_dir / "characters" / "profiles"
+        # 加载角色设定（优先 src/characters）
+        profiles_dir = self.src_dir / "characters"
+        if not profiles_dir.exists():
+            profiles_dir = self.data_dir / "characters" / "profiles"
         if profiles_dir.exists():
             chars_text = []
             for p in sorted(profiles_dir.glob("*.md"))[:5]:
@@ -699,7 +738,9 @@ class ContextBuilder:
         """
         rules = WorldRules()
 
-        world_dir = self.data_dir / "world"
+        world_dir = self.src_dir / "world"
+        if not world_dir.exists():
+            world_dir = self.data_dir / "world"
 
         # 1. 从 world/rules.md 加载世界规则
         rules_path = world_dir / "rules.md"
@@ -754,7 +795,7 @@ class ContextBuilder:
                 f"{i:03d}.md",
             ]
             for pattern in patterns:
-                matches = list(manuscript_dir.glob(pattern))
+                matches = sorted(manuscript_dir.rglob(pattern))
                 if matches:
                     text = self._load_text(matches[0])
                     if text:

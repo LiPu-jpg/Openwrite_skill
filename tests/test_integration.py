@@ -38,15 +38,16 @@ class TestInitProject:
     def test_init_creates_directories(self, tmp_path):
         init_project(tmp_path, "my_novel", "我的小说")
         base = tmp_path / "data" / "novels" / "my_novel"
-        assert (base / "outline").is_dir()
-        assert (base / "characters" / "cards").is_dir()
-        assert (base / "characters" / "profiles").is_dir()
-        assert (base / "world" / "entities").is_dir()
-        assert (base / "foreshadowing").is_dir()
-        assert (base / "style").is_dir()
-        assert (base / "manuscript" / "arc_001").is_dir()
-        assert (base / "compressed").is_dir()
-        assert (base / "workflows").is_dir()
+        assert (base / "src").is_dir()
+        assert (base / "src" / "characters").is_dir()
+        assert (base / "src" / "world").is_dir()
+        assert (base / "src" / "world" / "entities").is_dir()
+        assert (base / "data" / "characters" / "cards").is_dir()
+        assert (base / "data" / "foreshadowing").is_dir()
+        assert (base / "data" / "style").is_dir()
+        assert (base / "data" / "manuscript" / "arc_001").is_dir()
+        assert (base / "data" / "compressed").is_dir()
+        assert (base / "data" / "workflows").is_dir()
 
     def test_init_creates_config(self, tmp_path):
         init_project(tmp_path, "my_novel")
@@ -57,21 +58,22 @@ class TestInitProject:
 
     def test_init_creates_outline(self, tmp_path):
         init_project(tmp_path, "my_novel")
-        outline = tmp_path / "data" / "novels" / "my_novel" / "outline" / "hierarchy.yaml"
+        outline = tmp_path / "data" / "novels" / "my_novel" / "data" / "hierarchy.yaml"
         assert outline.exists()
         data = yaml.safe_load(outline.read_text(encoding="utf-8"))
-        assert "hierarchy" in data
+        assert "story_info" in data
+        assert "chapters" in data
 
     def test_init_creates_world_files(self, tmp_path):
         init_project(tmp_path, "my_novel")
-        world_dir = tmp_path / "data" / "novels" / "my_novel" / "world"
+        world_dir = tmp_path / "data" / "novels" / "my_novel" / "src" / "world"
         assert (world_dir / "rules.md").exists()
         assert (world_dir / "timeline.md").exists()
         assert (world_dir / "terminology.md").exists()
 
     def test_init_creates_dag(self, tmp_path):
         init_project(tmp_path, "my_novel")
-        dag = tmp_path / "data" / "novels" / "my_novel" / "foreshadowing" / "dag.yaml"
+        dag = tmp_path / "data" / "novels" / "my_novel" / "data" / "foreshadowing" / "dag.yaml"
         assert dag.exists()
 
     def test_init_idempotent(self, tmp_path):
@@ -103,7 +105,7 @@ class TestOutlineToContext:
                 {"id": "ch_003", "title": "第三章", "summary": "转折"},
             ],
         }
-        outline_path = tmp_path / "data" / "novels" / novel_id / "outline" / "hierarchy.yaml"
+        outline_path = tmp_path / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
         outline_path.write_text(yaml.dump(outline_data, allow_unicode=True), encoding="utf-8")
 
         # 构建上下文
@@ -180,7 +182,16 @@ class TestFullPipeline:
         assert state.current_stage == "writing"
 
         # 3. 模拟写作完成
-        ms_path = tmp_path / "data" / "novels" / novel_id / "manuscript" / "ch_001.md"
+        ms_path = (
+            tmp_path
+            / "data"
+            / "novels"
+            / novel_id
+            / "data"
+            / "manuscript"
+            / "arc_001"
+            / "ch_001.md"
+        )
         ms_path.write_text("模拟的章节内容" * 100, encoding="utf-8")
         state = scheduler.complete_stage(
             state, "writing", data={"draft_path": str(ms_path)}
@@ -271,7 +282,7 @@ class TestWorldQueryIntegration:
         novel_id = "test"
         init_project(tmp_path, novel_id)
 
-        entities_dir = tmp_path / "data" / "novels" / novel_id / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / novel_id / "src" / "world" / "entities"
         (entities_dir / "place_a.md").write_text(
             "# 灵山\n\n> 地点 | 山脉 | active\n\n修仙圣地。\n\n## 关联\n\n- 天山派 — 驻地\n",
             encoding="utf-8",

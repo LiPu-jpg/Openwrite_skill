@@ -31,7 +31,7 @@ from tools.workflow_scheduler import (
 def scheduler(tmp_path):
     """创建临时目录的 scheduler"""
     novel_id = "test_novel"
-    base = tmp_path / "data" / "novels" / novel_id / "workflows"
+    base = tmp_path / "data" / "novels" / novel_id / "data" / "workflows"
     base.mkdir(parents=True)
     return WorkflowScheduler(project_root=tmp_path, novel_id=novel_id)
 
@@ -87,6 +87,12 @@ class TestWorkflowState:
 
 
 class TestWorkflowLifecycle:
+    def test_uses_runtime_workflow_dir(self, tmp_path):
+        scheduler = WorkflowScheduler(project_root=tmp_path, novel_id="test_novel")
+        assert scheduler.workflow_dir == (
+            tmp_path / "data" / "novels" / "test_novel" / "data" / "workflows"
+        )
+
     def test_create_workflow(self, scheduler):
         state = scheduler.create_workflow("ch_001")
         assert state.novel_id == "test_novel"

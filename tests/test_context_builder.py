@@ -32,15 +32,14 @@ def project_dir(tmp_path):
     """创建最小项目结构"""
     novel_id = "test_novel"
     base = tmp_path / "data" / "novels" / novel_id
-    (base / "outline").mkdir(parents=True)
-    (base / "characters" / "cards").mkdir(parents=True)
-    (base / "characters" / "profiles").mkdir(parents=True)
-    (base / "world" / "entities").mkdir(parents=True)
-    (base / "foreshadowing").mkdir(parents=True)
-    (base / "style").mkdir(parents=True)
-    (base / "manuscript" / "arc_001").mkdir(parents=True)
-    (base / "compressed").mkdir(parents=True)
-    (base / "workflows").mkdir(parents=True)
+    (base / "src" / "characters").mkdir(parents=True)
+    (base / "src" / "world" / "entities").mkdir(parents=True)
+    (base / "data" / "characters" / "cards").mkdir(parents=True)
+    (base / "data" / "foreshadowing").mkdir(parents=True)
+    (base / "data" / "style").mkdir(parents=True)
+    (base / "data" / "manuscript" / "arc_001").mkdir(parents=True)
+    (base / "data" / "compressed").mkdir(parents=True)
+    (base / "data" / "workflows").mkdir(parents=True)
     (tmp_path / "craft").mkdir(parents=True)
     return tmp_path, novel_id
 
@@ -87,7 +86,7 @@ class TestFileLoading:
 
     def test_load_yaml_valid(self, builder, project_dir):
         root, novel_id = project_dir
-        yaml_path = root / "data" / "novels" / novel_id / "outline" / "test.yaml"
+        yaml_path = root / "data" / "novels" / novel_id / "data" / "test.yaml"
         yaml_path.write_text("key: value\nlist:\n  - a\n  - b\n", encoding="utf-8")
         result = builder._load_yaml(yaml_path)
         assert result == {"key": "value", "list": ["a", "b"]}
@@ -175,7 +174,7 @@ class TestOutlineLoading:
 
     def test_load_hierarchy_with_data(self, builder, project_dir):
         root, novel_id = project_dir
-        outline_path = root / "data" / "novels" / novel_id / "outline" / "hierarchy.yaml"
+        outline_path = root / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
         data = {
             "story_info": {"title": "测试小说", "theme": "成长"},
             "arcs": [{"id": "arc_001", "title": "第一篇"}],
@@ -195,7 +194,7 @@ class TestOutlineLoading:
     def test_hierarchy_caching(self, builder, project_dir):
         """二次加载应使用缓存（仅当已有数据时）"""
         root, novel_id = project_dir
-        outline_path = root / "data" / "novels" / novel_id / "outline" / "hierarchy.yaml"
+        outline_path = root / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
         import yaml as _yaml
         data = {"story_info": {"title": "缓存测试"}, "chapters": []}
         outline_path.write_text(_yaml.dump(data, allow_unicode=True), encoding="utf-8")
@@ -218,7 +217,7 @@ class TestForeshadowingState:
 
     def test_state_from_dag(self, builder, project_dir):
         root, novel_id = project_dir
-        dag_path = root / "data" / "novels" / novel_id / "foreshadowing" / "dag.yaml"
+        dag_path = root / "data" / "novels" / novel_id / "data" / "foreshadowing" / "dag.yaml"
         dag_data = {
             "nodes": [
                 {"id": "f001", "content": "伏笔A", "status": "埋伏", "created_at": "ch_001"},
@@ -295,7 +294,7 @@ class TestRecentChapters:
 
     def test_load_recent_chapters(self, builder, project_dir):
         root, novel_id = project_dir
-        ms_dir = root / "data" / "novels" / novel_id / "manuscript"
+        ms_dir = root / "data" / "novels" / novel_id / "data" / "manuscript" / "arc_001"
         ms_dir.mkdir(parents=True, exist_ok=True)
         (ms_dir / "ch_001.md").write_text("第一章的内容" * 50, encoding="utf-8")
         (ms_dir / "ch_002.md").write_text("第二章的内容" * 50, encoding="utf-8")
@@ -321,7 +320,7 @@ class TestBuildGenerationContext:
 
     def test_build_with_outline(self, builder, project_dir):
         root, novel_id = project_dir
-        outline_path = root / "data" / "novels" / novel_id / "outline" / "hierarchy.yaml"
+        outline_path = root / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
         data = {
             "story_info": {"title": "测试"},
             "chapters": [

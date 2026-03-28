@@ -17,6 +17,7 @@ import logging
 from typing import Optional, Callable, Literal
 from dataclasses import dataclass, field
 from datetime import datetime
+from urllib.parse import urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,12 @@ class LLMConfig:
     max_tokens: int = 8192
     stream: bool = True
     api_format: Literal["chat", "responses"] = "chat"
+    timeout_seconds: float = 120.0
+    max_retries: int = 3
     extra: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.base_url = self._normalize_base_url(self.base_url)
 
     @classmethod
     def from_env(cls) -> "LLMConfig":
@@ -93,7 +99,30 @@ class LLMConfig:
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "8192")),
             stream=os.getenv("LLM_STREAM", "true").lower() == "true",
             api_format=os.getenv("LLM_API_FORMAT", "chat"),
+            timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
+            max_retries=int(os.getenv("LLM_MAX_RETRIES", "3")),
         )
+
+    @staticmethod
+    def _normalize_base_url(base_url: str) -> str:
+        """把完整 OpenAI 兼容端点折回到 SDK 需要的 API 根路径。"""
+        if not base_url:
+            return base_url
+
+        normalized = base_url.rstrip("/")
+        parsed = urlsplit(normalized)
+        path = parsed.path.rstrip("/")
+        endpoint_suffixes = (
+            "/chat/completions",
+            "/responses",
+        )
+
+        for suffix in endpoint_suffixes:
+            if path.endswith(suffix):
+                path = path[: -len(suffix)] or "/"
+                return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
+
+        return normalized
 
 
 class StreamProgress:
@@ -165,8 +194,8 @@ class LLMClient:
         return openai.OpenAI(
             api_key=self.config.api_key,
             base_url=self.config.base_url,
-            timeout=120.0,
-            max_retries=3,
+            timeout=self.config.timeout_seconds,
+            max_retries=self.config.max_retries,
         )
 
     def chat(

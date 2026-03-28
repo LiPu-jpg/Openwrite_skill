@@ -10,11 +10,13 @@
     openwrite --help            # 显示帮助
 """
 
+import asyncio
+import re
 import sys
 import argparse
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 logging.basicConfig(
     level=logging.INFO,
@@ -545,10 +547,8 @@ def _cmd_status(args) -> int:
     logger.info(f"当前章: {config.get('current_chapter', 'N/A')}")
 
     truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
-
-    summary_lines = truth.chapter_summaries.count("## 第")
-    logger.info(f"已写章节: {summary_lines}")
+    written_chapters = _count_written_chapters(project_root, novel_id)
+    logger.info(f"已写章节: {written_chapters}")
 
     snapshots = truth_manager.list_snapshots()
     logger.info(f"快照数: {len(snapshots)}")
@@ -557,98 +557,70 @@ def _cmd_status(args) -> int:
 
 
 def _cmd_agent(args) -> int:
-    """使用 ReAct Agent"""
-    import asyncio
-
+    """使用确定性 Orchestrator"""
     project_root = Path.cwd()
+    config = _load_config(project_root)
+    novel_id = (config or {}).get("novel_id") or "current"
 
-    async def do_agent():
-        try:
-            from tools.llm import LLMClient, LLMConfig
-            from tools.agent import ReActAgent, OPENWRITE_TOOLS, OPENWRITE_SYSTEM_PROMPT
+    try:
+        from tools.agent.orchestrator import OpenWriteOrchestrator
+        from tools.agent.tool_runtime import build_tool_executors
 
-            llm_config = LLMConfig.from_env()
-            client = LLMClient(llm_config)
+        orchestrator = OpenWriteOrchestrator(
+            project_root=project_root,
+            novel_id=novel_id,
+            tool_executors=build_tool_executors(project_root),
+        )
+        return orchestrator.run_cli(
+            instruction=args.instruction,
+            quiet=args.quiet,
+            max_turns=args.max_turns,
+        )
+    except ImportError as e:
+        logger.error(f"Agent 模块未安装: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Agent 执行失败: {e}")
+        return 1
 
-            agent = ReActAgent(
-                client=client,
-                model=llm_config.model,
-                tools=OPENWRITE_TOOLS,
-                system_prompt=OPENWRITE_SYSTEM_PROMPT,
-                max_turns=args.max_turns,
-            )
 
-            # 注册工具执行器
-            agent._register_tool_executors(
-                {
-                    # 写作相关
-                    "write_chapter": lambda a: _exec_write_chapter(project_root, a),
-                    "review_chapter": lambda a: _exec_review_chapter(project_root, a),
-                    "get_status": lambda a: _exec_get_status(project_root),
-                    "get_context": lambda a: _exec_get_context(project_root, a),
-                    "list_chapters": lambda a: _exec_list_chapters(project_root),
-                    "create_outline": lambda a: _exec_create_outline(project_root, a),
-                    "create_character": lambda a: _exec_create_character(project_root, a),
-                    "get_truth_files": lambda a: _exec_get_truth_files(project_root),
-                    "update_truth_file": lambda a: _exec_update_truth_file(project_root, a),
-                    # 伏笔管理
-                    "create_foreshadowing": lambda a: _exec_create_foreshadowing(project_root, a),
-                    "list_foreshadowing": lambda a: _exec_list_foreshadowing(project_root, a),
-                    "update_foreshadowing": lambda a: _exec_update_foreshadowing(project_root, a),
-                    "validate_foreshadowing": lambda a: _exec_validate_foreshadowing(
-                        project_root, a
-                    ),
-                    # 世界查询
-                    "query_world": lambda a: _exec_query_world(project_root, a),
-                    "get_world_relations": lambda a: _exec_get_world_relations(project_root, a),
-                    # 状态验证
-                    "validate_truth": lambda a: _exec_validate_truth(project_root, a),
-                    # 对话质量
-                    "extract_dialogue_fingerprint": lambda a: _exec_extract_dialogue_fingerprint(
-                        project_root, a
-                    ),
-                    # 后置验证
-                    "validate_post_write": lambda a: _exec_validate_post_write(project_root, a),
-                    # 工作流
-                    "get_workflow_status": lambda a: _exec_get_workflow_status(project_root, a),
-                    "start_workflow": lambda a: _exec_start_workflow(project_root, a),
-                    "advance_workflow": lambda a: _exec_advance_workflow(project_root, a),
-                    # 文本处理
-                    "chunk_text": lambda a: _exec_chunk_text(project_root, a),
-                    "compress_section": lambda a: _exec_compress_section(project_root, a),
-                }
-            )
-
-            def on_tool_call(name: str, args_: dict):
-                if not args.quiet:
-                    print(f"  [tool] {name}({args_})")
-
-            def on_tool_result(name: str, result: str):
-                if not args.quiet:
-                    preview = result[:200] + "..." if len(result) > 200 else result
-                    print(f"  [result] {preview}")
-
-            def on_message(content: str):
-                print(f"\n{content}\n")
-
-            result = await agent.run(
-                instruction=args.instruction,
-                on_tool_call=on_tool_call if not args.quiet else None,
-                on_tool_result=on_tool_result if not args.quiet else None,
-                on_message=on_message,
-            )
-
-            return 0
-
-        except ImportError as e:
-            logger.error(f"LLM 模块未安装: {e}")
-            logger.info("设置环境变量: LLM_API_KEY, LLM_MODEL")
-            return 1
-        except Exception as e:
-            logger.error(f"Agent 执行失败: {e}")
-            return 1
-
-    return asyncio.run(do_agent())
+def build_cli_tool_executors(project_root: Path) -> dict[str, Callable[[dict], dict]]:
+    """构建 CLI 工具执行器映射（公开 API）。"""
+    return {
+        # 写作相关
+        "write_chapter": lambda a: _exec_write_chapter(project_root, a),
+        "review_chapter": lambda a: _exec_review_chapter(project_root, a),
+        "get_status": lambda a: _exec_get_status(project_root),
+        "get_context": lambda a: _exec_get_context(project_root, a),
+        "list_chapters": lambda a: _exec_list_chapters(project_root),
+        "create_outline": lambda a: _exec_create_outline(project_root, a),
+        "create_character": lambda a: _exec_create_character(project_root, a),
+        "get_truth_files": lambda a: _exec_get_truth_files(project_root),
+        "update_truth_file": lambda a: _exec_update_truth_file(project_root, a),
+        # 伏笔管理
+        "create_foreshadowing": lambda a: _exec_create_foreshadowing(project_root, a),
+        "list_foreshadowing": lambda a: _exec_list_foreshadowing(project_root, a),
+        "update_foreshadowing": lambda a: _exec_update_foreshadowing(project_root, a),
+        "validate_foreshadowing": lambda a: _exec_validate_foreshadowing(project_root, a),
+        # 世界查询
+        "query_world": lambda a: _exec_query_world(project_root, a),
+        "get_world_relations": lambda a: _exec_get_world_relations(project_root, a),
+        # 状态验证
+        "validate_truth": lambda a: _exec_validate_truth(project_root, a),
+        # 对话质量
+        "extract_dialogue_fingerprint": lambda a: _exec_extract_dialogue_fingerprint(
+            project_root, a
+        ),
+        # 后置验证
+        "validate_post_write": lambda a: _exec_validate_post_write(project_root, a),
+        # 工作流
+        "get_workflow_status": lambda a: _exec_get_workflow_status(project_root, a),
+        "start_workflow": lambda a: _exec_start_workflow(project_root, a),
+        "advance_workflow": lambda a: _exec_advance_workflow(project_root, a),
+        # 文本处理
+        "chunk_text": lambda a: _exec_chunk_text(project_root, a),
+        "compress_section": lambda a: _exec_compress_section(project_root, a),
+    }
 
 
 def _exec_write_chapter(project_root: Path, args: dict) -> dict:
@@ -687,15 +659,17 @@ def _exec_write_chapter(project_root: Path, args: dict) -> dict:
             )
         )
 
-        _save_chapter(project_root, novel_id, chapter_id, result.title, result.content)
+        draft_path = _save_chapter(project_root, novel_id, chapter_id, result.title, result.content)
 
         return {
+            "ok": True,
             "chapter_id": chapter_id,
             "title": result.title,
             "word_count": result.word_count,
+            "draft_path": str(draft_path),
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"ok": False, "chapter_id": chapter_id, "error": str(e)}
 
 
 def _exec_review_chapter(project_root: Path, args: dict) -> dict:
@@ -743,9 +717,7 @@ def _exec_get_status(project_root: Path) -> dict:
     from tools.truth_manager import TruthFilesManager
 
     truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
-
-    summary_lines = truth.chapter_summaries.count("## 第")
+    summary_lines = _count_written_chapters(project_root, novel_id)
     snapshots = truth_manager.list_snapshots()
 
     return {
@@ -1031,19 +1003,45 @@ def _load_config(project_root: Path) -> Optional[dict]:
         return yaml.safe_load(f)
 
 
+def _count_written_chapters(project_root: Path, novel_id: str) -> int:
+    """统计已写章节数。"""
+    return len(_iter_final_chapter_paths(project_root, novel_id))
+
+
+def _iter_final_chapter_paths(project_root: Path, novel_id: str) -> list[Path]:
+    """列出当前布局下的最终章节文件。"""
+    manuscript_dir = _manuscript_dir(project_root, novel_id) / _get_current_arc(project_root)
+    if not manuscript_dir.exists():
+        return []
+
+    chapter_pattern = re.compile(r"^ch_\d+\.md$")
+    return sorted(
+        path
+        for path in manuscript_dir.rglob("*.md")
+        if path.is_file() and chapter_pattern.fullmatch(path.name)
+    )
+
+
+def _get_current_arc(project_root: Path) -> str:
+    """读取当前篇章目录，默认回退到 arc_001。"""
+    config = _load_config(project_root) or {}
+    return config.get("current_arc") or "arc_001"
+
+
+def _manuscript_dir(project_root: Path, novel_id: str) -> Path:
+    """获取当前支持的手稿根目录。"""
+    return project_root / "data" / "novels" / novel_id / "data" / "manuscript"
+
+
 def _load_chapter(project_root: Path, novel_id: str, chapter_id: str) -> Optional[str]:
     """加载章节内容"""
-    manuscript_dir = project_root / "data" / "novels" / novel_id / "manuscript"
+    manuscript_dir = _manuscript_dir(project_root, novel_id) / _get_current_arc(project_root)
+    if not manuscript_dir.exists():
+        return None
 
-    patterns = [
-        f"{chapter_id}.md",
-        f"{chapter_id}_*.md",
-    ]
-
-    for pattern in patterns:
-        matches = list(manuscript_dir.glob(pattern))
-        if matches:
-            return matches[0].read_text(encoding="utf-8")
+    file_path = manuscript_dir / f"{chapter_id}.md"
+    if file_path.is_file():
+        return file_path.read_text(encoding="utf-8")
 
     return None
 
@@ -1056,7 +1054,7 @@ def _save_chapter(
     content: str,
 ) -> Path:
     """保存章节"""
-    manuscript_dir = project_root / "data" / "novels" / novel_id / "manuscript"
+    manuscript_dir = _manuscript_dir(project_root, novel_id) / _get_current_arc(project_root)
     manuscript_dir.mkdir(parents=True, exist_ok=True)
 
     file_path = manuscript_dir / f"{chapter_id}.md"
@@ -1067,23 +1065,20 @@ def _save_chapter(
 
 def _get_next_chapter(project_root: Path, novel_id: str) -> str:
     """获取下一个章节 ID"""
-    truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
-
-    existing = truth.chapter_summaries.count("## 第")
+    existing = _count_written_chapters(project_root, novel_id)
     return f"ch_{existing + 1:03d}"
 
 
 def _get_latest_chapter(project_root: Path, novel_id: str) -> str:
     """获取最新章节"""
-    truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
+    matches = []
+    for path in _iter_final_chapter_paths(project_root, novel_id):
+        match = re.fullmatch(r"ch_(\d+)\.md", path.name)
+        if match:
+            matches.append(int(match.group(1)))
 
-    import re
-
-    matches = re.findall(r"## 第(\d+)章", truth.chapter_summaries)
     if matches:
-        latest = max(int(m) for m in matches)
+        latest = max(matches)
         return f"ch_{latest:03d}"
 
     return "ch_001"

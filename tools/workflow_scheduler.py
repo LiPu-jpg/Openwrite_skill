@@ -152,7 +152,7 @@ class WorkflowScheduler:
         self.project_root = Path(project_root).resolve()
         self.novel_id = novel_id
         self.workflow_dir = (
-            self.project_root / "data" / "novels" / novel_id / "workflows"
+            self.project_root / "data" / "novels" / novel_id / "data" / "workflows"
         )
         self.workflow_dir.mkdir(parents=True, exist_ok=True)
 

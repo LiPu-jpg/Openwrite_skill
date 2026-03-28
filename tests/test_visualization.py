@@ -20,6 +20,7 @@ from tools.workflow_scheduler import WorkflowScheduler
 
 PROJECT_ROOT = Path(__file__).parent.parent
 TEST_NOVEL = PROJECT_ROOT / "data" / "novels" / "test_novel"
+TEST_RUNTIME = TEST_NOVEL / "data"
 TEST_NOVEL_ID = "test_novel"
 
 
@@ -180,7 +181,7 @@ class TestForeshadowingVisualization:
         print("测试: 伏笔 DAG 可视化")
         print("=" * 60)
 
-        dag_path = TEST_NOVEL / "foreshadowing" / "dag.yaml"
+        dag_path = TEST_RUNTIME / "foreshadowing" / "dag.yaml"
         if not dag_path.exists():
             pytest.skip(f"DAG not found: {dag_path}")
 
@@ -214,7 +215,7 @@ class TestWorldVisualization:
         if not rules_path.exists():
             pytest.skip(f"World rules not found: {rules_path}")
 
-        entities = list_entities(TEST_NOVEL)
+        entities = list_entities(TEST_NOVEL_ID)
 
         if not entities:
             print("\n  (暂无实体数据)")
@@ -283,7 +284,7 @@ class TestWorkflowVisualization:
         print("测试: 工作流进度可视化")
         print("=" * 60)
 
-        workflow_path = TEST_NOVEL / "workflows"
+        workflow_path = TEST_RUNTIME / "workflows"
         if not workflow_path.exists():
             pytest.skip(f"Workflow dir not found: {workflow_path}")
 
@@ -438,7 +439,7 @@ class TestIntegration23Tools:
         print("工具1/23: list_chapters")
         print("─" * 60)
 
-        manuscript_dir = TEST_NOVEL / "manuscript"
+        manuscript_dir = TEST_RUNTIME / "manuscript"
         chapters = []
         if manuscript_dir.exists():
             for arc_dir in manuscript_dir.iterdir():
@@ -469,8 +470,8 @@ class TestIntegration23Tools:
             )
             if (TEST_NOVEL / "src" / "world" / "entities").exists()
             else 0,
-            "workflows_count": len(list((TEST_NOVEL / "workflows").glob("*.yaml")))
-            if (TEST_NOVEL / "workflows").exists()
+            "workflows_count": len(list((TEST_RUNTIME / "workflows").glob("*.yaml")))
+            if (TEST_RUNTIME / "workflows").exists()
             else 0,
         }
 
@@ -505,7 +506,7 @@ class TestIntegration23Tools:
         print("工具4/23: query_world")
         print("─" * 60)
 
-        entities = list_entities(TEST_NOVEL)
+        entities = list_entities(TEST_NOVEL_ID)
 
         print(f"  🌍 世界观实体 ({len(entities)}):")
         for e in entities[:5]:
@@ -520,7 +521,7 @@ class TestIntegration23Tools:
         print("工具5/23: get_world_relations")
         print("─" * 60)
 
-        graph = get_relations_graph(TEST_NOVEL)
+        graph = get_relations_graph(TEST_NOVEL_ID)
 
         print(f"  🔗 关系图谱:")
         print(f"     实体数: {graph.get('entity_count', 0)}")
@@ -672,9 +673,10 @@ class TestIntegration23Tools:
         from tools.truth_manager import TruthFilesManager
 
         validator = StateValidator()
-        truth_manager = TruthFilesManager(TEST_NOVEL, "test_novel")
+        truth_manager = TruthFilesManager(PROJECT_ROOT, "test_novel")
+        issues = []
 
-        chapter_path = TEST_NOVEL / "manuscript" / "arc_001" / "ch_001.md"
+        chapter_path = TEST_RUNTIME / "manuscript" / "arc_001" / "ch_001.md"
         if chapter_path.exists():
             with open(chapter_path) as f:
                 content = f.read()
@@ -703,7 +705,7 @@ class TestIntegration23Tools:
 
         from tools.dialogue_fingerprint import DialogueFingerprintExtractor
 
-        chapter_path = TEST_NOVEL / "manuscript" / "arc_001" / "ch_001.md"
+        chapter_path = TEST_RUNTIME / "manuscript" / "arc_001" / "ch_001.md"
         if chapter_path.exists():
             with open(chapter_path) as f:
                 text = f.read()
@@ -732,8 +734,9 @@ class TestIntegration23Tools:
         from tools.post_validator import PostWriteValidator
 
         validator = PostWriteValidator()
+        violations = []
 
-        chapter_path = TEST_NOVEL / "manuscript" / "arc_001" / "ch_001.md"
+        chapter_path = TEST_RUNTIME / "manuscript" / "arc_001" / "ch_001.md"
         if chapter_path.exists():
             with open(chapter_path) as f:
                 text = f.read()
@@ -759,7 +762,15 @@ class TestIntegration23Tools:
 
         import yaml
 
-        workflow_path = TEST_NOVEL / "workflows" / "ch_001.yaml"
+        workflow_dir = TEST_RUNTIME / "workflows"
+        workflow_path = next(
+            (
+                path
+                for path in [workflow_dir / "ch_001.yaml", workflow_dir / "wf_ch_001.yaml"]
+                if path.exists()
+            ),
+            workflow_dir / "ch_001.yaml",
+        )
         if workflow_path.exists():
             with open(workflow_path) as f:
                 wf = yaml.safe_load(f)
@@ -813,7 +824,7 @@ class TestIntegration23Tools:
 
         from tools.text_chunker import TextChunker
 
-        chapter_path = TEST_NOVEL / "manuscript" / "arc_001" / "ch_001.md"
+        chapter_path = TEST_RUNTIME / "manuscript" / "arc_001" / "ch_001.md"
         if chapter_path.exists():
             chunker = TextChunker()
             result = chunker.chunk_file(chapter_path)
@@ -879,7 +890,8 @@ class TestIntegration23Tools:
 
         import yaml
 
-        cards_dir = TEST_NOVEL / "data" / "characters" / "cards"
+        cards_dir = TEST_RUNTIME / "characters" / "cards"
+        cards = []
         if cards_dir.exists():
             cards = list(cards_dir.glob("*.yaml"))
 
@@ -898,7 +910,7 @@ class TestIntegration23Tools:
         print("工具22/23: write_chapter")
         print("─" * 60)
 
-        chapter_path = TEST_NOVEL / "manuscript" / "arc_001" / "ch_001.md"
+        chapter_path = TEST_RUNTIME / "manuscript" / "arc_001" / "ch_001.md"
 
         print(f"  ✍️ 章节文件检查:")
         print(f"     ch_001.md 存在: {'是' if chapter_path.exists() else '否'}")
@@ -916,7 +928,7 @@ class TestIntegration23Tools:
         print("工具23/23: review_chapter")
         print("─" * 60)
 
-        review_path = TEST_NOVEL / "manuscript" / "arc_001" / "ch_001_review.yaml"
+        review_path = TEST_RUNTIME / "manuscript" / "arc_001" / "ch_001_review.yaml"
 
         print(f"  🔍 审查文件检查:")
         print(f"     ch_001_review.yaml 存在: {'是' if review_path.exists() else '否'}")

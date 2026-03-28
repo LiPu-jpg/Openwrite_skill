@@ -122,7 +122,7 @@ class TestListEntities:
     @pytest.fixture
     def entity_project(self, tmp_path):
         """创建包含实体文件的项目"""
-        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
 
         (entities_dir / "place_a.md").write_text(
@@ -148,7 +148,7 @@ class TestListEntities:
         assert result[0]["name"] == "天山派"
 
     def test_list_empty_dir(self, tmp_path):
-        entities_dir = tmp_path / "data" / "novels" / "empty" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "empty" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
         result = list_entities("empty", project_root=tmp_path)
         assert result == []
@@ -171,7 +171,7 @@ class TestGetEntity:
 
     @pytest.fixture
     def entity_project(self, tmp_path):
-        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
         (entities_dir / "item_x.md").write_text(
             "# 天命之剑\n\n> 物品 | 武器 | active\n\n传说中的神兵。\n\n## 规则\n\n- 只有天命之人能拔出\n",
@@ -198,7 +198,7 @@ class TestGetRelationsGraph:
 
     @pytest.fixture
     def relation_project(self, tmp_path):
-        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
 
         (entities_dir / "a.md").write_text(
