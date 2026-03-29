@@ -135,7 +135,10 @@ def _add_goethe_command(subparsers):
 
 def _add_dante_command(subparsers):
     """dante 命令 - 新入口占位"""
-    subparsers.add_parser("dante", help="Dante 入口（占位，待实现）")
+    p = subparsers.add_parser("dante", help="Dante 入口（占位，待实现）")
+    p.add_argument("instruction", nargs="?", default="查看项目状态", help="自然语言指令")
+    p.add_argument("--max-turns", type=int, default=20, help="最大循环次数")
+    p.add_argument("--quiet", action="store_true", help="静默模式")
 
 
 def _add_sync_command(subparsers):
@@ -826,8 +829,8 @@ def _cmd_goethe(args) -> int:
 
 def _cmd_dante(args) -> int:
     """Dante 入口占位"""
-    logger.info("Dante 入口已保留，后续实现将在此接入。")
-    return 0
+    logger.error("openwrite dante 尚未实现，请稍后再试。")
+    return 1
 
 
 def _cmd_radar(args) -> int:

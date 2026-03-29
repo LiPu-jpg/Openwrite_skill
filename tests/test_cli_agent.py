@@ -57,20 +57,30 @@ def test_main_rejects_legacy_wizard_command(monkeypatch: pytest.MonkeyPatch):
     assert exc.value.code == 2
 
 
-def test_main_accepts_dante_command(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(sys, "argv", ["openwrite", "dante"])
+def test_cmd_dante_returns_not_implemented_error(caplog: pytest.LogCaptureFixture):
+    with caplog.at_level("ERROR"):
+        result = cli_module._cmd_dante(_fake_args("查看项目状态", max_turns=7, quiet=True))
 
-    called = {"value": False}
+    assert result == 1
+    assert "openwrite dante 尚未实现" in caplog.text
+
+
+def test_main_accepts_legacy_style_dante_args(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "dante", "查看项目状态", "--max-turns", "7", "--quiet"])
+
+    captured = {}
 
     def fake_dispatch(args):
-        called["value"] = True
-        assert args.command == "dante"
+        captured["args"] = args
         return 0
 
     monkeypatch.setattr(cli_module, "_dispatch", fake_dispatch)
 
     assert cli_module.main() == 0
-    assert called["value"] is True
+    assert captured["args"].command == "dante"
+    assert captured["args"].instruction == "查看项目状态"
+    assert captured["args"].max_turns == 7
+    assert captured["args"].quiet is True
 
 
 def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
