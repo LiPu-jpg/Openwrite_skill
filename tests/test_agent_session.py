@@ -222,6 +222,33 @@ def test_save_compresses_metadata_only_payload_without_missing_helper(tmp_path: 
     assert loaded.compression_markers[-1].reason == "size"
 
 
+def test_repeated_save_load_cycles_bound_compression_markers(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.recent_turns = [
+        SessionTurn(role="user", content=f"turn-{index:02d}")
+        for index in range(MAX_RECENT_TURNS + 1)
+    ]
+    state.compression_markers = [
+        CompressionMarker(
+            compressed_at=f"2026-03-30T10:00:{index:02d}",
+            dropped_turns=1,
+            kept_turns=1,
+            reason="count",
+        )
+        for index in range(40)
+    ]
+
+    for _ in range(3):
+        store.save(state)
+        state = store.load_or_create()
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert len(state.compression_markers) <= 16
+
+
 def test_repeat_save_is_idempotent_after_compression(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     huge_text = "x" * (MAX_SESSION_BYTES // 2)
@@ -285,10 +312,10 @@ def test_load_or_create_persists_normalized_schema_complete_data(tmp_path: Path)
                 "active_agent": "dante",
                 "conversation_summary": "",
                 "recent_turns": [],
-                "working_memory": {},
-                "open_questions": [],
-                "recent_files": [],
-                "last_action": "",
+                "working_memory": {"nested": {"unsafe": "keep"}},
+                "open_questions": [1, "keep"],
+                "recent_files": ["chapter.md", 2],
+                "last_action": 999,
                 "compression_markers": [
                     {
                         "compressed_at": "2026-03-30T10:00:00",
@@ -312,6 +339,9 @@ def test_load_or_create_persists_normalized_schema_complete_data(tmp_path: Path)
     assert state.compression_markers[0].reason == "count"
     assert reloaded["compression_markers"][0]["dropped_turns"] == 0
     assert reloaded["compression_markers"][0]["reason"] == "count"
+    assert reloaded["open_questions"] == ["1", "keep"]
+    assert reloaded["recent_files"] == ["chapter.md", "2"]
+    assert reloaded["last_action"] == "999"
 
 
 def test_save_stringifies_unsafe_working_memory_values(tmp_path: Path):
@@ -333,6 +363,21 @@ def test_save_stringifies_unsafe_working_memory_values(tmp_path: Path):
 
     assert reloaded["working_memory"]["nested"]["unsafe"].startswith("<")
     assert reloaded["working_memory"]["nested"]["list"][0].startswith("<")
+
+
+def test_save_stringifies_non_string_lists_and_scalars(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.open_questions = [1, Path("question.md"), {"prompt": "q"}]
+    state.recent_files = [Path("file.md"), 2, {"path": "docs.md"}]
+    state.last_action = 12345
+
+    store.save(state)
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert reloaded["open_questions"] == ["1", "question.md", "{'prompt': 'q'}"]
+    assert reloaded["recent_files"] == ["file.md", "2", "{'path': 'docs.md'}"]
+    assert reloaded["last_action"] == "12345"
 
 
 def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, monkeypatch):
@@ -377,6 +422,18 @@ def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, 
 
     assert state.compression_markers[-1].compressed_at == "2026-03-30T12:34:56"
     assert reloaded["compression_markers"][-1]["compressed_at"] == "2026-03-30T12:34:56"
+
+
+def test_load_or_create_repairs_non_utf8_corrupt_bytes(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_bytes(b"\xff\xfe\x00\x00not-yaml")
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert state.session_id == "demo"
+    assert reloaded["session_id"] == "demo"
 
 
 def test_load_or_create_normalizes_malformed_compression_markers(tmp_path: Path):

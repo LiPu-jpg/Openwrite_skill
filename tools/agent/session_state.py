@@ -14,6 +14,7 @@ MAX_RECENT_TURNS = 6
 MAX_SESSION_BYTES = 4096
 MAX_SUMMARY_BYTES = 1024
 MAX_TURN_CONTENT_BYTES = 256
+MAX_COMPRESSION_MARKERS = 12
 DEFAULT_ACTIVE_AGENT = "dante"
 
 
@@ -67,7 +68,7 @@ class SessionStateStore:
 
         try:
             data = yaml.safe_load(self.path.read_text(encoding="utf-8"))
-        except yaml.YAMLError:
+        except (yaml.YAMLError, UnicodeDecodeError):
             state = self._default_state()
             self.save(state)
             return state
@@ -84,8 +85,10 @@ class SessionStateStore:
         return state
 
     def save(self, state: DanteSessionState) -> None:
+        self._normalize_state_for_persistence(state)
         self._stamp_updated_at(state)
         self._compress_if_needed(state)
+        self._normalize_state_for_persistence(state)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         content = yaml.safe_dump(
             self._to_dict(state), allow_unicode=True, sort_keys=False
@@ -138,6 +141,7 @@ class SessionStateStore:
                 reason="count",
             )
         )
+        self._bound_compression_markers(state)
         return True
 
     def _compress_for_size(self, state: DanteSessionState) -> bool:
@@ -180,6 +184,7 @@ class SessionStateStore:
                 reason="size",
             )
         )
+        self._bound_compression_markers(state)
         return True
 
     def _compression_reason(self, state: DanteSessionState) -> str | None:
@@ -204,11 +209,11 @@ class SessionStateStore:
         )
 
     def _render_turn(self, turn: SessionTurn, content_limit: int | None = None) -> str:
-        role = turn.role or "unknown"
+        role = self._stringify_scalar(turn.role) or "unknown"
         content = (
             self._truncate_text(turn.content, content_limit, keep_tail=False)
             if content_limit is not None
-            else turn.content
+            else self._stringify_scalar(turn.content)
         )
         return f"{role}: {content}".rstrip()
 
@@ -235,6 +240,7 @@ class SessionStateStore:
         state.open_questions = self._compact_string_list(state.open_questions, 32)[:4]
         state.recent_files = self._compact_string_list(state.recent_files, 32)[:4]
         state.last_action = self._truncate_text(state.last_action, 32, keep_tail=False)
+        self._bound_compression_markers(state)
 
     def _hard_truncate_state(self, state: DanteSessionState) -> None:
         state.conversation_summary = self._truncate_text(
@@ -258,6 +264,7 @@ class SessionStateStore:
     def _truncate_text(
         self, text: str, limit: int, *, keep_tail: bool
     ) -> str:
+        text = self._stringify_scalar(text)
         if limit <= 0 or not text:
             return ""
 
@@ -273,7 +280,16 @@ class SessionStateStore:
 
     def _to_dict(self, state: DanteSessionState) -> dict[str, Any]:
         data = asdict(state)
+        data["session_id"] = self._stringify_scalar(data["session_id"])
+        data["active_agent"] = self._stringify_scalar(data["active_agent"])
+        data["conversation_summary"] = self._stringify_scalar(
+            data["conversation_summary"]
+        )
         data["working_memory"] = self._sanitize_yaml_value(data["working_memory"])
+        data["open_questions"] = self._sanitize_yaml_value(data["open_questions"])
+        data["recent_files"] = self._sanitize_yaml_value(data["recent_files"])
+        data["last_action"] = self._stringify_scalar(data["last_action"])
+        data["updated_at"] = self._stringify_scalar(data["updated_at"])
         return data
 
     def _from_dict(self, data: dict[str, Any]) -> DanteSessionState:
@@ -351,6 +367,55 @@ class SessionStateStore:
                 )
         return markers
 
+    def _normalize_state_for_persistence(self, state: DanteSessionState) -> None:
+        state.session_id = self._stringify_scalar(state.session_id)
+        state.active_agent = self._stringify_scalar(state.active_agent) or DEFAULT_ACTIVE_AGENT
+        state.conversation_summary = self._stringify_scalar(state.conversation_summary)
+        state.recent_turns = self._coerce_turn_list(state.recent_turns)
+        state.working_memory = self._sanitize_yaml_value(state.working_memory)
+        state.open_questions = self._coerce_string_list(state.open_questions)
+        state.recent_files = self._coerce_string_list(state.recent_files)
+        state.last_action = self._stringify_scalar(state.last_action)
+        state.updated_at = self._stringify_scalar(state.updated_at)
+        state.compression_markers = self._normalize_marker_list(state.compression_markers)
+        self._bound_compression_markers(state)
+
+    def _coerce_string_list(self, value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return [self._stringify_scalar(item) for item in value]
+        return [self._stringify_scalar(value)]
+
+    def _coerce_turn_list(self, value: Any) -> list[SessionTurn]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            value = [value]
+        turns: list[SessionTurn] = []
+        for item in value:
+            if isinstance(item, SessionTurn):
+                turns.append(
+                    SessionTurn(
+                        role=self._stringify_scalar(item.role),
+                        content=self._stringify_scalar(item.content),
+                    )
+                )
+            elif isinstance(item, dict):
+                turns.append(
+                    SessionTurn(
+                        role=self._stringify_scalar(item.get("role", "")),
+                        content=self._stringify_scalar(item.get("content", "")),
+                    )
+                )
+            else:
+                turns.append(SessionTurn(role="unknown", content=self._stringify_scalar(item)))
+        return turns
+
+    def _bound_compression_markers(self, state: DanteSessionState) -> None:
+        if len(state.compression_markers) > MAX_COMPRESSION_MARKERS:
+            state.compression_markers = state.compression_markers[-MAX_COMPRESSION_MARKERS:]
+
     def _normalize_reason(self, value: Any) -> Literal["count", "size"]:
         if value == "size":
             return "size"
@@ -391,3 +456,10 @@ class SessionStateStore:
                 for key, item in value.items()
             }
         return repr(value)
+
+    def _stringify_scalar(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        return str(value)
