@@ -501,6 +501,74 @@ def test_load_or_create_repairs_null_scalars_without_string_none(tmp_path: Path)
     assert reloaded["conversation_summary"] == ""
 
 
+def test_load_or_create_normalizes_null_compression_marker_timestamp(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": "dante",
+                "conversation_summary": "",
+                "recent_turns": [],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [
+                    {
+                        "compressed_at": None,
+                        "dropped_turns": 1,
+                        "kept_turns": 0,
+                        "reason": None,
+                    }
+                ],
+                "updated_at": "",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+
+    assert state.compression_markers[0].compressed_at == ""
+    assert state.compression_markers[0].reason == "count"
+
+
+def test_size_marker_near_limit_boundary_stays_within_cap(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+
+    low = 0
+    high = MAX_SESSION_BYTES
+    best = 0
+    while low <= high:
+        mid = (low + high) // 2
+        state.conversation_summary = "x" * mid
+        if store._estimate_size(state) < MAX_SESSION_BYTES:
+            best = mid
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    state.conversation_summary = "x" * best
+    assert store._estimate_size(state) < MAX_SESSION_BYTES
+    state.compression_markers.append(
+        CompressionMarker(
+            compressed_at="2026-03-30T10:00:00",
+            dropped_turns=0,
+            kept_turns=0,
+            reason="size",
+        )
+    )
+
+    store._enforce_size_after_marker(state)
+
+    assert store._estimate_size(state) <= MAX_SESSION_BYTES
+
+
 def test_load_or_create_coerces_scalar_listish_fields(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)

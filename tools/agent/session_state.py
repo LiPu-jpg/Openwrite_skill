@@ -356,7 +356,9 @@ class SessionStateStore:
             elif isinstance(item, dict):
                 markers.append(
                     CompressionMarker(
-                        compressed_at=str(item.get("compressed_at", "")),
+                        compressed_at=self._normalize_scalar(
+                            item.get("compressed_at"), ""
+                        ),
                         dropped_turns=self._safe_int(item.get("dropped_turns", 0)),
                         kept_turns=self._safe_int(item.get("kept_turns", 0)),
                         reason=self._normalize_reason(item.get("reason")),
@@ -477,3 +479,5 @@ class SessionStateStore:
     def _enforce_size_after_marker(self, state: DanteSessionState) -> None:
         while self._estimate_size(state) > MAX_SESSION_BYTES and len(state.compression_markers) > 1:
             state.compression_markers.pop(0)
+        if self._estimate_size(state) > MAX_SESSION_BYTES:
+            self._hard_truncate_state(state)
