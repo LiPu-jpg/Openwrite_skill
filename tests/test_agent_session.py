@@ -9,6 +9,7 @@ from tools.agent.session_state import (
     SessionStateStore,
     MAX_RECENT_TURNS,
     MAX_COMPRESSION_MARKERS,
+    MAX_WORKING_MEMORY_KEYS,
     MAX_SESSION_BYTES,
 )
 
@@ -395,6 +396,20 @@ def test_save_compresses_wide_working_memory(tmp_path: Path):
     assert len(reloaded.working_memory) <= len(state.working_memory)
 
 
+def test_save_compresses_wide_working_memory_with_many_small_keys(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {f"key_{index:04d}": index for index in range(2000)}
+
+    store.save(state)
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+    reloaded = store.load_or_create()
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert len(reloaded.working_memory) <= MAX_WORKING_MEMORY_KEYS
+
+
 def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, monkeypatch):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)
@@ -451,6 +466,41 @@ def test_load_or_create_repairs_non_utf8_corrupt_bytes(tmp_path: Path):
     assert reloaded["session_id"] == "demo"
 
 
+def test_load_or_create_repairs_null_scalars_without_string_none(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": None,
+                "conversation_summary": None,
+                "recent_turns": [{"role": "user", "content": "hello"}],
+                "working_memory": {},
+                "open_questions": None,
+                "recent_files": None,
+                "last_action": None,
+                "compression_markers": None,
+                "updated_at": None,
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert state.active_agent == "dante"
+    assert state.conversation_summary == ""
+    assert state.last_action == ""
+    assert state.open_questions == []
+    assert state.recent_files == []
+    assert reloaded["active_agent"] == "dante"
+    assert reloaded["conversation_summary"] == ""
+
+
 def test_load_or_create_coerces_scalar_listish_fields(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)
@@ -480,6 +530,20 @@ def test_load_or_create_coerces_scalar_listish_fields(tmp_path: Path):
     assert state.open_questions == ["{'prompt': 'ask'}"]
     assert state.recent_files == ["{'path': 'chapter.md'}"]
     assert len(state.compression_markers) == 1
+
+
+def test_save_keeps_newest_items_when_compacting_lists(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.open_questions = [f"question-{index}" for index in range(20)]
+    state.recent_files = [f"file-{index}" for index in range(20)]
+    state.working_memory = {"notes": "x" * (MAX_SESSION_BYTES * 2)}
+
+    store.save(state)
+    reloaded = store.load_or_create()
+
+    assert reloaded.open_questions[-1] == "question-19"
+    assert reloaded.recent_files[-1] == "file-19"
 
 
 def test_load_or_create_normalizes_malformed_compression_markers(tmp_path: Path):
