@@ -14,6 +14,7 @@ MAX_RECENT_TURNS = 6
 MAX_SESSION_BYTES = 4096
 MAX_SUMMARY_BYTES = 1024
 MAX_TURN_CONTENT_BYTES = 256
+MAX_STRUCTURAL_TEXT_BYTES = 64
 MAX_COMPRESSION_MARKERS = 12
 MAX_WORKING_MEMORY_KEYS = 128
 DEFAULT_ACTIVE_AGENT = "dante"
@@ -400,19 +401,32 @@ class SessionStateStore:
             if isinstance(item, SessionTurn):
                 turns.append(
                     SessionTurn(
-                        role=self._stringify_scalar(item.role),
+                        role=self._truncate_text(
+                            self._stringify_scalar(item.role),
+                            MAX_STRUCTURAL_TEXT_BYTES,
+                            keep_tail=False,
+                        ),
                         content=self._stringify_scalar(item.content),
                     )
                 )
             elif isinstance(item, dict):
                 turns.append(
                     SessionTurn(
-                        role=self._stringify_scalar(item.get("role", "")),
+                        role=self._truncate_text(
+                            self._stringify_scalar(item.get("role", "")),
+                            MAX_STRUCTURAL_TEXT_BYTES,
+                            keep_tail=False,
+                        ),
                         content=self._stringify_scalar(item.get("content", "")),
                     )
                 )
             else:
-                turns.append(SessionTurn(role="unknown", content=self._stringify_scalar(item)))
+                turns.append(
+                    SessionTurn(
+                        role="unknown",
+                        content=self._stringify_scalar(item),
+                    )
+                )
         return turns
 
     def _bound_compression_markers(self, state: DanteSessionState) -> None:
@@ -435,7 +449,13 @@ class SessionStateStore:
     ) -> dict[str, Any]:
         compacted: dict[str, Any] = {}
         for key, item in list(value.items())[-max_keys:]:
-            compacted[str(key)] = self._compact_value(item, budget)
+            compacted[
+                self._truncate_text(
+                    self._stringify_scalar(key),
+                    MAX_STRUCTURAL_TEXT_BYTES,
+                    keep_tail=False,
+                )
+            ] = self._compact_value(item, budget)
         return compacted
 
     def _compact_string_list(self, value: list[str], budget: int) -> list[str]:

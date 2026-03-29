@@ -410,6 +410,32 @@ def test_save_compresses_wide_working_memory_with_many_small_keys(tmp_path: Path
     assert len(reloaded.working_memory) <= MAX_WORKING_MEMORY_KEYS
 
 
+def test_save_compresses_oversized_working_memory_key_name(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {"k" * (MAX_SESSION_BYTES * 2): "value"}
+
+    store.save(state)
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+
+    assert persisted_size <= MAX_SESSION_BYTES
+
+
+def test_save_compresses_oversized_turn_role(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.recent_turns = [
+        SessionTurn(role="r" * (MAX_SESSION_BYTES * 2), content="hello")
+    ]
+
+    store.save(state)
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+
+    assert persisted_size <= MAX_SESSION_BYTES
+
+
 def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, monkeypatch):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)
