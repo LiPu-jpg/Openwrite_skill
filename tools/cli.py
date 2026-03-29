@@ -134,8 +134,12 @@ def _add_goethe_command(subparsers):
 
 
 def _add_dante_command(subparsers):
-    """dante 命令 - 新入口占位"""
-    p = subparsers.add_parser("dante", help="Dante 入口（占位，待实现）")
+    """dante 命令 - 过渡性主入口"""
+    p = subparsers.add_parser(
+        "dante",
+        help="过渡性主入口：复用确定性编排器",
+        description="过渡性主入口：复用现有确定性编排器，作为主入口迁移层。",
+    )
     p.add_argument("instruction", nargs="?", default="查看项目状态", help="自然语言指令")
     p.add_argument("--max-turns", type=int, default=20, help="最大循环次数")
     p.add_argument("--quiet", action="store_true", help="静默模式")
@@ -836,7 +840,7 @@ def _cmd_dante(args) -> int:
     project_root = Path.cwd()
     config = _load_config(project_root)
     if not config:
-        logger.error("未找到 novel_config.yaml，请先运行 openwrite init")
+        logger.error("openwrite dante 未找到 novel_config.yaml，请先运行 openwrite init")
         return 1
 
     novel_id = config.get("novel_id") or "current"
@@ -856,10 +860,10 @@ def _cmd_dante(args) -> int:
             max_turns=args.max_turns,
         )
     except ImportError as e:
-        logger.error(f"Agent 模块未安装: {e}")
+        logger.error(f"Dante 模块未安装: {e}")
         return 1
     except Exception as e:
-        logger.error(f"Agent 执行失败: {e}")
+        logger.error(f"Dante 执行失败: {e}")
         return 1
 
 

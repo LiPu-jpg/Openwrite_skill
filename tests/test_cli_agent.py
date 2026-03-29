@@ -97,6 +97,119 @@ def test_cmd_dante_routes_through_orchestrator(tmp_path: Path, monkeypatch: pyte
     assert orchestrator_calls["max_turns"] == 7
 
 
+def test_cmd_dante_requires_project_config_before_initializing_orchestrator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+    called = {"value": False}
+
+    def forbidden(*args, **kwargs):
+        called["value"] = True
+        return SimpleNamespace(run_cli=lambda **_: 0)
+
+    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", forbidden)
+
+    assert cli_module._cmd_dante(_fake_args("查看项目状态")) == 1
+    assert called["value"] is False
+
+
+def test_cmd_dante_passes_instruction_and_returns_orchestrator_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+    monkeypatch.setattr(
+        tool_runtime_module,
+        "build_tool_executors",
+        lambda project_root: {"get_status": lambda args: {"ok": True}},
+    )
+
+    run_cli_calls: dict[str, object] = {}
+
+    class FakeOrchestrator:
+        def __init__(self, project_root: Path, novel_id: str, tool_executors):
+            self.project_root = project_root
+            self.novel_id = novel_id
+            self.tool_executors = tool_executors
+
+        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
+            run_cli_calls["instruction"] = instruction
+            run_cli_calls["quiet"] = quiet
+            run_cli_calls["max_turns"] = max_turns
+            return 17
+
+    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
+
+    result = cli_module._cmd_dante(_fake_args("写 ch_001", max_turns=9, quiet=False))
+
+    assert result == 17
+    assert run_cli_calls == {
+        "instruction": "写 ch_001",
+        "quiet": False,
+        "max_turns": 9,
+    }
+
+
+def test_cmd_dante_does_not_require_llm_client_setup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+    monkeypatch.setattr(tool_runtime_module, "build_tool_executors", lambda project_root: {})
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("LLM client setup should not be touched")
+
+    monkeypatch.setattr(llm_module, "LLMClient", forbidden)
+    monkeypatch.setattr(llm_module.LLMConfig, "from_env", classmethod(lambda cls: forbidden()))
+
+    class FakeOrchestrator:
+        def __init__(self, project_root: Path, novel_id: str, tool_executors):
+            self.project_root = project_root
+            self.novel_id = novel_id
+            self.tool_executors = tool_executors
+
+        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
+            return 0
+
+    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
+
+    assert cli_module._cmd_dante(_fake_args("基础设定准备好了")) == 0
+
+
+def test_dante_help_no_longer_mentions_placeholder(monkeypatch: pytest.MonkeyPatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "dante", "--help"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+
+    captured = capsys.readouterr()
+
+    assert exc.value.code == 0
+    assert "占位" not in captured.out
+    assert "待实现" not in captured.out
+    assert "过渡性主入口" in captured.out
+    assert "复用现有确定性编排器" in captured.out
+
+
+def test_cmd_dante_reports_dante_named_import_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+
+    def boom(project_root: Path):
+        raise ImportError("missing runtime")
+
+    monkeypatch.setattr(tool_runtime_module, "build_tool_executors", boom)
+
+    with caplog.at_level("ERROR"):
+        result = cli_module._cmd_dante(_fake_args("查看项目状态"))
+
+    assert result == 1
+    assert "Dante 模块未安装" in caplog.text
+
+
 def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
     caplog: pytest.LogCaptureFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -117,19 +230,6 @@ def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
     assert called["value"] is False
     assert "openwrite agent 已退役" in caplog.text
     assert "openwrite dante" in caplog.text
-
-
-def test_main_agent_help_shows_retirement_notice(monkeypatch: pytest.MonkeyPatch, capsys):
-    monkeypatch.setattr(sys, "argv", ["openwrite", "agent", "--help"])
-
-    with pytest.raises(SystemExit) as exc:
-        cli_module.main()
-
-    captured = capsys.readouterr()
-
-    assert exc.value.code == 0
-    assert "已退役" in captured.out
-    assert "openwrite dante" in captured.out
 
 
 def test_run_cli_status_instruction_is_read_only(tmp_path: Path):
