@@ -306,6 +306,12 @@ class OpenWriteOrchestrator:
         if self._looks_like_outline_confirmation(text):
             return self._handle_outline_confirmation()
 
+        if self._looks_like_ideation_summary_request(text):
+            return self._handle_ideation_summary_request(blocked=False)
+
+        if self._looks_like_ideation_summary_confirmation(text):
+            return self._handle_ideation_summary_confirmation(text)
+
         if self._looks_like_outline_generation_request(text):
             return self._handle_outline_generation(text)
 
@@ -355,6 +361,33 @@ class OpenWriteOrchestrator:
             stage=self.state.stage,
             blocked=False,
             next_action="request_more_background",
+        )
+
+    def _handle_ideation_summary_request(self, *, blocked: bool) -> OrchestratorResult:
+        return self._ensure_ideation_summary_confirmation(blocked=blocked)
+
+    def _handle_ideation_summary_confirmation(self, text: str) -> OrchestratorResult:
+        if self.state.pending_confirmation != "ideation_summary":
+            return self._stage_blocked_result(
+                "当前没有待确认的想法汇总，我先保持现状。",
+                next_action="ignore",
+            )
+
+        self.state.pending_confirmation = ""
+        self.state.blocking_reason = ""
+        self.state.last_agent_action = "confirmed_ideation_summary"
+        if self.state.stage == BookStage.DISCOVERY:
+            self.state.stage = BookStage.FOUNDATION
+        self.state_store.save(self.state)
+
+        if self._looks_like_outline_generation_request(text):
+            return self._handle_outline_generation(text)
+
+        return OrchestratorResult(
+            message="已确认当前想法汇总。下一步可以继续补基础设定，或让我开始整理大纲。",
+            stage=self.state.stage,
+            blocked=False,
+            next_action="ready_for_outline_generation",
         )
 
     def _ignored_result(self) -> OrchestratorResult:
@@ -429,10 +462,10 @@ class OpenWriteOrchestrator:
             self.state.last_agent_action = "blocked_foundation_promotion_missing_drafts"
             self.state_store.save(self.state)
             return OrchestratorResult(
-                message="基础设定草案缺失。请先准备 background_draft.md 和 foundation_draft.md。",
+                message="基础设定文档缺失。请先准备 src/story/background.md 与 src/story/foundation.md。",
                 stage=self.state.stage,
                 blocked=True,
-                next_action="prepare_foundation_drafts",
+                next_action="prepare_foundation_documents",
             )
 
         self.state.stage = BookStage.ROLLING_OUTLINE
@@ -463,10 +496,10 @@ class OpenWriteOrchestrator:
             self.state.last_agent_action = "blocked_outline_promotion_missing_draft"
             self.state_store.save(self.state)
             return OrchestratorResult(
-                message="大纲草案缺失。请先准备 outline_draft.md。",
+                message="大纲文档缺失。请先准备 src/outline.md。",
                 stage=self.state.stage,
                 blocked=True,
-                next_action="prepare_outline_draft",
+                next_action="prepare_outline_document",
             )
 
         self._sync_runtime_caches(sync_outline=True, sync_characters=False)
@@ -483,6 +516,12 @@ class OpenWriteOrchestrator:
         )
 
     def _handle_outline_generation(self, text: str) -> OrchestratorResult:
+        if self.state.pending_confirmation == "ideation_summary" or (
+            self._read_text(self.story_planning_store.ideation_path).strip()
+            and not self.story_planning_store.ideation_summary_is_current()
+        ):
+            return self._ensure_ideation_summary_confirmation(blocked=True)
+
         try:
             outline = self._generate_outline_draft(text)
         except Exception as exc:
@@ -715,6 +754,24 @@ class OpenWriteOrchestrator:
             return False
         return any(token in text for token in ("生成", "创建", "设计", "规划", "整理", "来一份"))
 
+    def _looks_like_ideation_summary_request(self, text: str) -> bool:
+        if not any(token in text for token in ("汇总", "总结", "整理")):
+            return False
+        lowered = text.lower()
+        return any(token in lowered for token in ("想法", "灵感", "设定", "idea", "脑洞", "思路"))
+
+    def _looks_like_ideation_summary_confirmation(self, text: str) -> bool:
+        if self.state.pending_confirmation != "ideation_summary":
+            return False
+        lowered = text.lower()
+        return (
+            any(token in lowered for token in ("汇总", "总结", "想法", "idea", "灵感"))
+            and any(
+                token in lowered
+                for token in ("确认", "可以", "没问题", "同意", "行", "ok", "okay", "继续")
+            )
+        )
+
     def _looks_like_character_creation_request(self, text: str) -> bool:
         if "角色" not in text:
             return False
@@ -766,10 +823,32 @@ class OpenWriteOrchestrator:
             context.style_profile, "to_summary"
         ):
             summary = context.style_profile.to_summary(max_chars=1200)
-        return {
+        docs = {
             "summary": summary,
             "prompt_section": prompt_sections.get("风格指南", ""),
         }
+        runtime_style_root = (
+            self.project_root / "data" / "novels" / self.novel_id / "data" / "style"
+        )
+        composed_path = runtime_style_root / "composed.md"
+        fingerprint_path = runtime_style_root / "fingerprint.yaml"
+        if composed_path.exists():
+            docs["work.composed"] = self._read_text(composed_path)
+        if fingerprint_path.exists():
+            docs["work.fingerprint"] = self._read_text(fingerprint_path)
+
+        craft_root = self.project_root / "craft"
+        for name in (
+            "dialogue_craft.md",
+            "scene_craft.md",
+            "rhythm_craft.md",
+            "humanization.yaml",
+            "ai_patterns.yaml",
+        ):
+            path = craft_root / name
+            if path.exists():
+                docs[f"craft.{path.stem}"] = self._read_text(path)
+        return docs
 
     def _build_character_documents(self, context: Any) -> list[str]:
         documents: list[str] = []
@@ -880,6 +959,7 @@ class OpenWriteOrchestrator:
 
 格式要求：
 - `# 作品名`
+- 总纲标题下先给 1-2 段故事简介，说明主角、核心冲突和整本书的大方向
 - `## 第X篇：篇标题`
 - `### 第X节：节标题`
 - `#### 第X章：章标题`
@@ -906,6 +986,32 @@ class OpenWriteOrchestrator:
         )
         return self._strip_code_fences(
             self._chat_text(system_prompt, user_prompt, temperature=0.6, max_tokens=6000)
+        )
+
+    def _generate_ideation_summary(self) -> str:
+        ideation = self._read_text(self.story_planning_store.ideation_path).strip()
+        if not ideation:
+            raise RuntimeError("缺少可汇总的 ideation 内容")
+        story_title = self._current_story_title()
+        system_prompt = """你是 OpenWrite 的立项整理助手。
+
+请把用户目前的零散想法整理成一份可确认的 Markdown 汇总，只输出 Markdown，不要解释，不要代码围栏。
+
+结构要求：
+- `# 当前想法汇总`
+- `## 核心方向`
+- `## 稳定共识`
+- `## 待确认点`
+- `## 开放问题`
+- `## 下一步建议`
+
+约束：
+- 只根据已有想法归纳，不要硬造细节
+- 语言要清楚，便于作者确认
+- 如果信息不足，要明确写在“待确认点”或“开放问题”里"""
+        user_prompt = f"项目名：{story_title}\n\n当前灵感记录：\n{ideation}"
+        return self._strip_code_fences(
+            self._chat_text(system_prompt, user_prompt, temperature=0.4, max_tokens=3000)
         )
 
     def _generate_character_document(self, request_text: str) -> str:
@@ -969,14 +1075,53 @@ class OpenWriteOrchestrator:
         parts: list[str] = []
         background = self.story_planning_store.read_story_document("background", max_chars=1800)
         foundation = self.story_planning_store.read_story_document("foundation", max_chars=1800)
+        ideation_summary = self.story_planning_store.read_ideation_summary(max_chars=1800)
         ideation = self._read_text(self.story_planning_store.ideation_path)[:1200]
         if background:
             parts.append(f"## 背景\n{background}")
         if foundation:
             parts.append(f"## 基础设定\n{foundation}")
-        if ideation:
+        if ideation_summary and self.story_planning_store.ideation_summary_is_current():
+            parts.append(f"## 当前想法汇总\n{ideation_summary}")
+        elif ideation:
             parts.append(f"## 灵感记录\n{ideation}")
         return "\n\n".join(parts).strip() or "暂无现成设定，请根据用户请求自行补足。"
+
+    def _ensure_ideation_summary_confirmation(self, *, blocked: bool) -> OrchestratorResult:
+        ideation = self._read_text(self.story_planning_store.ideation_path).strip()
+        if not ideation:
+            return OrchestratorResult(
+                message="当前还没有可整理的想法记录。请先继续补充灵感和设定方向。",
+                stage=self.state.stage,
+                blocked=True,
+                next_action="request_more_background",
+            )
+
+        if (
+            self.state.pending_confirmation == "ideation_summary"
+            and self.story_planning_store.ideation_summary_is_current()
+        ):
+            return OrchestratorResult(
+                message="当前想法汇总已整理完成。请先确认这版汇总，再继续生成或修改大纲。",
+                stage=self.state.stage,
+                blocked=True if blocked else False,
+                next_action="confirm_ideation_summary",
+            )
+
+        if not self.story_planning_store.ideation_summary_is_current():
+            summary = self._generate_ideation_summary()
+            self.story_planning_store.save_ideation_summary(summary)
+
+        self.state.pending_confirmation = "ideation_summary"
+        self.state.blocking_reason = ""
+        self.state.last_agent_action = "generated_ideation_summary"
+        self.state_store.save(self.state)
+        return OrchestratorResult(
+            message="已整理当前想法汇总。请先确认这版汇总，再继续生成或修改大纲。",
+            stage=self.state.stage,
+            blocked=blocked,
+            next_action="confirm_ideation_summary",
+        )
 
     def _current_story_title(self) -> str:
         outline_text = self._read_text(self.story_planning_store.outline_src_path)

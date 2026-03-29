@@ -1,4 +1,4 @@
-"""对话式引导 - MiniMax 兼容版本
+"""Goethe 对话式引导 - MiniMax 兼容版本
 
 由于 MiniMax 不支持标准 function calling，使用结构化文本输出。
 使用 prompt_toolkit 提供更好的输入体验（方向键支持）。
@@ -12,15 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from prompt_toolkit import PromptSession
-from prompt_toolkit.history import InMemoryHistory
-from prompt_toolkit.styles import Style
-
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class WizardResult:
+class GoetheResult:
     """引导结果"""
 
     success: bool
@@ -111,8 +107,8 @@ SYSTEM_PROMPT = """你是 OpenWrite 小说创作引导 Agent。
 """
 
 
-class WizardChatAgent:
-    """对话式引导 Agent（MiniMax 兼容）"""
+class GoetheChatAgent:
+    """Goethe 对话式引导 Agent（MiniMax 兼容）"""
 
     def __init__(self):
         from tools.llm import LLMClient, LLMConfig
@@ -123,8 +119,12 @@ class WizardChatAgent:
         self.project_created = False
         self.current_novel_id: Optional[str] = None
 
-    def run(self) -> WizardResult:
+    def run(self) -> GoetheResult:
         """运行 Agent"""
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.history import InMemoryHistory
+        from prompt_toolkit.styles import Style
+
         print("\n" + "=" * 50)
         print("   OpenWrite 小说创作引导")
         print("   (输入 '退出' 可结束对话)")
@@ -167,11 +167,11 @@ class WizardChatAgent:
                     user_input = session.prompt("\n👤 你: ").strip()
                 except KeyboardInterrupt:
                     print("\n\n已取消")
-                    return WizardResult(success=False)
+                    return GoetheResult(success=False)
 
                 if user_input.lower() in ["退出", "quit", "exit", "q"]:
                     print("\n好的，随时欢迎回来！")
-                    return WizardResult(success=False)
+                    return GoetheResult(success=False)
 
                 if not user_input:
                     continue
@@ -202,7 +202,7 @@ class WizardChatAgent:
                 # 检查是否完成
                 if "项目已创建" in content or "可以开始写作" in content:
                     if self.current_novel_id:
-                        return WizardResult(
+                        return GoetheResult(
                             success=True,
                             project_path=Path.cwd() / "data" / "novels" / self.current_novel_id,
                             novel_id=self.current_novel_id,
@@ -210,7 +210,7 @@ class WizardChatAgent:
 
         except KeyboardInterrupt:
             print("\n\n已取消")
-            return WizardResult(success=False)
+            return GoetheResult(success=False)
 
     def _make_message(self, m: dict):
         """转换消息格式"""
@@ -348,6 +348,9 @@ class WizardChatAgent:
             foreshadowing_draft.write_text(foundation.foreshadowing_seed, encoding="utf-8")
 
             generated = [
+                "src/story/background.md",
+                "src/story/foundation.md",
+                "src/outline.md",
                 "data/planning/background_draft.md",
                 "data/planning/foundation_draft.md",
                 "data/planning/outline_draft.md",
@@ -404,9 +407,9 @@ class WizardChatAgent:
         return f"项目 {novel_id} 状态:\n" + "\n".join(checks)
 
 
-def run_wizard():
-    """运行引导"""
-    agent = WizardChatAgent()
+def run_goethe():
+    """运行 Goethe 引导"""
+    agent = GoetheChatAgent()
     result = agent.run()
 
     if result.success:
@@ -417,4 +420,4 @@ def run_wizard():
 
 
 if __name__ == "__main__":
-    sys.exit(run_wizard())
+    sys.exit(run_goethe())

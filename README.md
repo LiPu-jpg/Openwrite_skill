@@ -2,29 +2,17 @@
 
 <img src="assets/logo.svg" width="420" alt="OpenWrite" />
 
-OpenWrite 是一个面向长篇小说创作的 AI 工作台。它把「大纲、角色、世界观、伏笔、风格、章节写作、审查」放在同一条生产线上，让你能连续写，不靠记忆硬撑一致性。
+OpenWrite 是一个面向长篇小说创作的 AI 工作台。它不是“给模型塞一段 prompt 然后生成一章”，而是把立项、设定、滚动大纲、章节写作、审查、真相文件和 workflow 放进同一条长期生产线里，让你能真的把一本书持续写下去。
 
-## 为什么用 OpenWrite
+## 它和普通 AI 写作工具的区别
 
-- 写作链路完整：从立项到写章、审查、回写状态一条龙。
-- 数据职责清晰：`src/` 放人工源文件，`data/` 放运行态文件。
-- 支持自然语言和命令行：既能 `openwrite agent "写第五章"`，也能脚本化执行。
-- 主编排入口统一：`openwrite agent` 负责整书流程，`multi-write` 可作为受限写作子流程。
-- 可持续写长篇：真相文件自动更新，降低设定漂移。
+- 它按“整本书”工作，不按“单次生成”工作。
+- `src/` 是人和 AI 共用的确认版真源，`data/` 是运行态，不再维持两套彼此漂移的文档。
+- 写章前会先组 canonical packet，不是裸 prompt。
+- `openwrite agent` 会先收集想法、汇总 idea、确认基础设定和可写大纲，再进入章节写作。
+- `write`、`multi-write`、`review`、`agent` 现在都会推进同一套 `book_state.yaml` 和 `wf_ch_*.yaml`。
 
-## 一键启动
-
-如果你已经在项目根目录，先执行：
-
-```bash
-source .venv/bin/activate
-export LLM_PROVIDER=openai
-export LLM_MODEL=gpt-4o-mini
-export LLM_API_KEY=sk-xxx
-openwrite wizard
-```
-
-新项目从零开始：
+## 3 分钟开始
 
 ```bash
 git clone <repo_url>
@@ -32,204 +20,274 @@ cd Openwrite
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-openwrite wizard
+
+export LLM_API_KEY=your-key
+export LLM_MODEL=gpt-4o-mini
+# 如果你走兼容端点，也可以额外设置：
+# export LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions
+
+openwrite goethe
 ```
 
-## 30 秒上手
+如果项目已经存在，直接在项目根目录执行：
 
 ```bash
-# 1) 初始化（或用 wizard）
-openwrite init my_novel
-
-# 2) 同步 src -> data（建议在写作前跑一次）
-openwrite sync
-
-# 3) 写一章
-openwrite write next
-
-# 4) 审查
-openwrite review
-
-# 5) 查看状态
+source .venv/bin/activate
 openwrite status
+```
+
+## 你会怎么用它写一本书
+
+OpenWrite 推荐的链路不是“上来就写章”，而是：
+
+1. 立项聊天  
+   用 `goethe` 建项目，或直接用 `agent` 说你的想法。
+2. 汇总 idea  
+   `agent` 会把当前灵感整理成可确认的汇总，而不是把零散聊天直接硬塞进大纲。
+3. 确认基础设定  
+   背景、主角、规则、核心冲突稳定下来后，再进入大纲阶段。
+4. 生成或修改可写范围大纲  
+   大纲是硬门槛，没有当前可写范围的大纲，就不进入写章。
+5. 写章与审查  
+   `write`、`multi-write` 和 `review` 都基于同一套 canonical packet。
+6. 回写运行态  
+   `current_state.md`、`ledger.md`、`relationships.md`、`book_state.yaml`、`wf_ch_*.yaml` 会同步推进。
+
+一个典型会话会像这样：
+
+```bash
+openwrite agent "我想写一本都市职场异能小说"
+openwrite agent "主角是普通上班族，晚上能看到异常术式"
+openwrite agent "先帮我汇总一下当前想法"
+openwrite agent "这个汇总可以"
+openwrite agent "帮我生成一份四级大纲"
+openwrite agent "大纲范围确认，可以开始写"
+openwrite agent "写第六章，3500字，冲突更直接"
+openwrite review ch_006
+```
+
+## 最重要的心智模型
+
+### 1. `src/` 是唯一真源
+
+这里放确认版、长期维护的内容：
+
+- `src/outline.md`
+- `src/story/background.md`
+- `src/story/foundation.md`
+- `src/characters/*.md`
+- `src/world/rules.md`
+- `src/world/terminology.md`
+- `src/world/timeline.md`
+- `src/world/entities/*.md`
+
+这些文件推荐使用“`TOML front matter + Markdown 正文`”：
+
+- front matter 放索引字段：`id`、`summary`、`tags`、`detail_refs`、`related`
+- 正文放给人和 AI 共同阅读的详细设定
+
+### 2. `data/` 是运行态，不是第二份真相
+
+这里放工作流、运行时状态、手稿和派生缓存：
+
+- `data/manuscript/`：正文
+- `data/world/`：`current_state.md`、`ledger.md`、`relationships.md`
+- `data/workflows/`：`book_state.yaml`、`wf_ch_*.yaml`
+- `data/foreshadowing/`：伏笔图和日志
+- `data/style/`：合成风格和指纹
+- `data/test_outputs/`：上下文包快照
+- `data/characters/cards/*.yaml`、`data/hierarchy.yaml`：从 `src/` 派生出的缓存
+
+`data/planning/` 里有两类东西：
+
+- 真正的运行态规划记录：`ideation.md`、`ideation_summary.md`
+- 给 workflow 可见性的镜像文件：`background_draft.md`、`foundation_draft.md`、`outline_draft.md`
+
+其中确认版真源仍然是 `src/`，不是 `planning/*.md`。
+
+### 3. 写章靠的是 canonical packet
+
+写作前，系统会把这些信息拼成一个统一的上下文包：
+
+- 当前可写范围大纲
+- 故事背景和基础设定
+- 相关角色文档
+- 相关概念与世界规则
+- 上一章正文
+- 当前运行态真相文件
+- 作品风格、craft 规则、参考风格摘要
+
+所以 OpenWrite 的核心不是“一个 prompt”，而是“持续维护一份可拼接的小说状态”。
+
+## 目录结构
+
+```text
+data/novels/{novel_id}/
+├── src/
+│   ├── outline.md
+│   ├── story/
+│   │   ├── background.md
+│   │   └── foundation.md
+│   ├── characters/*.md
+│   └── world/
+│       ├── rules.md
+│       ├── terminology.md
+│       ├── timeline.md
+│       └── entities/*.md
+└── data/
+    ├── planning/
+    │   ├── ideation.md
+    │   ├── ideation_summary.md
+    │   ├── background_draft.md
+    │   ├── foundation_draft.md
+    │   └── outline_draft.md
+    ├── manuscript/arc_*/ch_*.md
+    ├── world/
+    │   ├── current_state.md
+    │   ├── ledger.md
+    │   └── relationships.md
+    ├── foreshadowing/dag.yaml
+    ├── style/
+    │   ├── composed.md
+    │   └── fingerprint.yaml
+    ├── workflows/
+    │   ├── book_state.yaml
+    │   └── wf_ch_*.yaml
+    ├── hierarchy.yaml
+    ├── characters/cards/*.yaml
+    └── test_outputs/
 ```
 
 ## 常用命令
 
-### 基础命令
+### 建项目和检查环境
 
 | 命令 | 用途 |
 |---|---|
-| `openwrite wizard` | 交互式创建项目（推荐新用户） |
-| `openwrite init <novel_id>` | 初始化项目目录 |
-| `openwrite status` | 查看当前项目状态 |
-| `openwrite doctor` | 环境与路径自检 |
+| `openwrite goethe` | 交互式创建项目，适合从零开始 |
+| `openwrite init <novel_id>` | 直接初始化目录 |
+| `openwrite status` | 查看当前运行态 |
+| `openwrite doctor` | 自检环境和路径 |
 
-### 写作与审查
+### 主编排
 
 | 命令 | 用途 |
 |---|---|
-| `openwrite write next` | 写下一章 |
+| `openwrite agent "..."` | 用自然语言驱动整本书流程 |
+| `openwrite agent "先帮我汇总一下当前想法"` | 整理 ideation summary |
+| `openwrite agent "帮我生成一份四级大纲"` | 生成或修改当前可写大纲 |
+| `openwrite agent "写第六章，字数 3500"` | 记录写作请求并进入 preflight / delegation |
+
+### 写作、审查、上下文
+
+| 命令 | 用途 |
+|---|---|
+| `openwrite write next` | direct CLI 写下一章 |
 | `openwrite write ch_005` | 写指定章节 |
-| `openwrite multi-write ch_005` | 多 Agent 编排写作 |
+| `openwrite multi-write ch_005` | 用 director/writer/reviewer 子流程写章 |
 | `openwrite review` | 审查最新章节 |
 | `openwrite review ch_005` | 审查指定章节 |
+| `openwrite context ch_005 --show` | 查看章节上下文 |
+| `openwrite assemble ch_005 --output-dir <dir>` | 导出 canonical packet 快照 |
 
-### 上下文与同步
+### 同步与风格
 
 | 命令 | 用途 |
 |---|---|
-| `openwrite context ch_005 --show` | 查看构建后的章节上下文 |
-| `openwrite assemble ch_005 --output-dir <dir>` | 导出 V2 上下文包 |
-| `openwrite sync --check` | 检查是否有待同步项 |
-| `openwrite sync --check --json` | 机器可解析的同步检查输出 |
+| `openwrite sync --check` | 检查 `src -> data` 是否有待同步项 |
 | `openwrite sync` | 执行同步 |
-
-### Agent 与风格
-
-| 命令 | 用途 |
-|---|---|
-| `openwrite agent "创建大纲"` | 自然语言驱动主编排 Agent |
-| `openwrite agent "写第五章，偏冷峻"` | 按要求生成章节 |
-| `openwrite radar` | 市场趋势分析 |
 | `openwrite style extract <name> --source <file>` | 提取参考风格 |
-| `openwrite style synthesize` | 合成风格文档 |
+| `openwrite style synthesize` | 重建 `data/style/composed.md` |
+| `openwrite radar` | 做题材/平台趋势分析 |
 
-## 目录结构（重点）
+## Agent 分工
 
-```text
-data/novels/{novel_id}/
-├── src/                      # 共享 source of truth（人和 AI 共读）
-│   ├── outline.md
-│   ├── story/*.md            # Markdown 正文 + TOML front matter
-│   ├── characters/*.md       # Markdown 正文 + TOML front matter
-│   └── world/
-│       ├── rules.md
-│       ├── timeline.md
-│       ├── terminology.md
-│       └── entities/*.md     # Markdown 正文 + TOML front matter
-└── data/                     # 运行态（工具读写）
-        ├── hierarchy.yaml
-        ├── characters/cards/*.yaml   # 从 src 派生的缓存，不手工维护
-        ├── manuscript/arc_*/ch_*.md
-        ├── foreshadowing/dag.yaml
-        ├── world/
-        │   ├── current_state.md      # Markdown 正文 + TOML front matter
-        │   ├── ledger.md             # Markdown 正文 + TOML front matter
-        │   └── relationships.md      # Markdown 正文 + TOML front matter
-        ├── style/composed.md
-        ├── workflows/*.yaml
-        └── test_outputs/
-```
+- `openwrite agent`  
+  主编排入口。负责立项聊天、idea 汇总、基础设定门禁、大纲门禁、章节 preflight、调度写作与审查。
 
-## 单源文档格式
+- `openwrite write`  
+  direct CLI 写作入口。适合明确知道要写哪一章时使用，但它现在也会走 canonical packet、workflow 和 book state。
 
-`src/story/*.md`、`src/characters/*.md`、`src/world/entities/*.md`，以及高频查看的 `data/world/*.md` 现在都推荐使用“`TOML front matter + Markdown 正文`”。
+- `openwrite multi-write`  
+  受限子流程。内部由 director 编排 writer / reviewer，更像 `openwrite agent` 可调用的 subagent。
 
-- front matter 放索引字段：`id`、`summary`、`tags`、`detail_refs`、`related`
-- 正文放详细设定：背景、外貌、规则、特征、关系说明等
-- `data/characters/cards/*.yaml` 仍会保留，但它只是从 `src/` 同步出来的派生缓存
-- `src/outline.md` 是唯一的大纲真源；`data/hierarchy.yaml` 只是派生缓存
+- `openwrite review`  
+  独立审查入口。和 `multi-write` reviewer 共享同一类 packet 语义，不再是裸正文审查。
 
-示例：
+- `openwrite goethe`  
+  项目创建引导。适合从零开始立项，不是长期写作主编排。
 
-```md
-+++
-id = "chen_ming"
-name = "陈明"
-tier = "主角"
-summary = "普通程序员觉醒术法后被迫在两个世界夹缝求生。"
-tags = ["都市", "异能"]
-detail_refs = ["background", "appearance", "personality"]
+## 推荐工作方式
 
-[[related]]
-target = "zhao_lei"
-kind = "friend"
-note = "最信任的同事"
-+++
+### 如果你主要手工维护设定
 
-# 陈明
+1. 改 `src/` 里的真源文档
+2. 跑 `openwrite sync`
+3. 用 `context` 或 `assemble` 看 packet
+4. 再 `write` / `multi-write` / `review`
 
-## background
-普通程序员，偶然觉醒术法。
-```
+### 如果你主要让 agent 推进
 
-## 写作链路是怎么跑的
+1. 用 `openwrite agent` 聊 idea
+2. 先确认 idea summary
+3. 再确认基础设定和可写大纲
+4. 然后让 agent 写章和审查
 
-1. canonical packet 组装：从 `src/outline.md`、`src/story/*.md`、`src/characters/*.md`、`src/world/**/*.md` 和运行态真相文件拼出统一上下文。
-2. 章节生成：`write` 和 `multi-write` 都基于同一套 packet 写章，不再是两套不同上下文。
-3. 章节审查：`review` 与 `multi-write reviewer` 共享同一类 packet 语义，不再空上下文审查。
-4. 状态结算：更新 `current_state.md`、`ledger.md`、`relationships.md`，并同步 `book_state.yaml` 与 `wf_ch_*.yaml`。
-5. 下一章继续：主编排和直接 CLI 都读同一套运行态，不需要手工对齐章节进度。
+### 不建议的做法
 
-## Agent 结构
+- 直接手改 `data/hierarchy.yaml`
+- 把 `data/characters/cards/*.yaml` 当真源维护
+- 没确认当前可写范围大纲就直接连写多章
 
-- `openwrite agent`：主编排入口，负责立项聊天、阶段判断、preflight、调度写作与审查。
-- `openwrite write`：direct CLI 写作入口，但现在也会先组 canonical packet，并推进 workflow 与 book state。
-- `openwrite multi-write`：受限子流程，director 编排 writer / reviewer / state settle；运行态推进和 direct write 保持一致。
-- `openwrite review`：独立审查入口，但现在也复用 canonical packet，不再只看裸正文。
-- `openwrite style synthesize`：把作品指纹、craft 规则与参考风格摘录写入 `data/style/composed.md`。
+## 标准样例
 
-## 真相文件命名
+标准样例项目在 [`data/novels/test_novel/`](data/novels/test_novel)。它包含：
 
-对外统一使用 canonical 名称：
+- 确认版 `src/` 真源
+- `ideation.md` 和 `ideation_summary.md`
+- 长篇骨架与当前可写窗口
+- 运行态真相文件
+- 已写章节手稿
+- canonical workflow 文件
 
-- `current_state`
-- `ledger`
-- `relationships`
+如果你想最快看懂这套结构，先读：
 
-历史别名 `particle_ledger`、`character_matrix`、`pending_hooks` 仍可被兼容读取，但不再作为文档和公共接口的主名称。
-
-## 推荐工作流
-
-```bash
-# 每次开工先检查环境
-openwrite doctor
-
-# 编辑过 src 后先同步
-openwrite sync --check
-openwrite sync
-
-# 风格指纹改动后可重建作品风格文档
-openwrite style synthesize
-
-# 生成 + 审查
-openwrite write next
-openwrite review
-```
+- [`src/outline.md`](data/novels/test_novel/src/outline.md)
+- [`data/planning/ideation.md`](data/novels/test_novel/data/planning/ideation.md)
+- [`data/planning/ideation_summary.md`](data/novels/test_novel/data/planning/ideation_summary.md)
+- [`data/workflows/book_state.yaml`](data/novels/test_novel/data/workflows/book_state.yaml)
 
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |---|---|---|
 | `LLM_API_KEY` | 模型 API Key | 无 |
-| `LLM_PROVIDER` | 提供商（openai/anthropic） | openai |
-| `LLM_MODEL` | 模型名 | gpt-4o-mini |
-| `LLM_BASE_URL` | 自定义网关地址 | `https://api.openai.com/v1` |
-| `LLM_TEMPERATURE` | 生成温度 | 0.7 |
-| `LLM_MAX_TOKENS` | 最大输出 token | 8192 |
+| `LLM_PROVIDER` | 提供商 | `openai` |
+| `LLM_MODEL` | 模型名 | `gpt-4o-mini` |
+| `LLM_BASE_URL` | 自定义兼容网关 | `https://api.openai.com/v1` |
+| `LLM_TEMPERATURE` | 默认温度 | `0.7` |
+| `LLM_MAX_TOKENS` | 最大输出 token | `8192` |
+| `LLM_TIMEOUT_SECONDS` | 请求超时秒数 | SDK 默认 |
+| `LLM_MAX_RETRIES` | 重试次数 | SDK 默认 |
 
 ## 常见问题
 
-### 报错：找不到 API Key
-
-```bash
-export LLM_API_KEY=sk-xxx
-```
-
-### 报错：未找到 `novel_config.yaml`
-
-```bash
-openwrite init my_novel
-```
-
 ### 我改了 `src/`，为什么写作没生效
 
-先跑同步：
+先同步：
 
 ```bash
 openwrite sync
 ```
+
+### 大纲到底看哪一份
+
+看 `src/outline.md`。  
+`data/hierarchy.yaml` 是缓存，不是给人手工维护的第二份大纲。
+
+### `background_draft.md` / `foundation_draft.md` / `outline_draft.md` 是不是另一套真相
+
+不是。它们是 runtime mirror，方便 workflow 和 agent 看到当前草案状态。确认版真源仍然在 `src/`。
 
 ### 真相文件在哪
 
@@ -237,24 +295,10 @@ openwrite sync
 data/novels/{novel_id}/data/world/
 ```
 
-## 给 Agent 的自然语言示例
+### 先聊天还是先写大纲
 
-- `openwrite agent "帮我生成一份都市异能题材四级大纲"`
-- `openwrite agent "创建一个反派角色，和主角是旧友"`
-- `openwrite agent "写第六章，重点写冲突升级，字数 3500"`
-- `openwrite agent "审查第六章并给出可执行修改建议"`
-
-## 标准样例
-
-标准样例项目在 `data/novels/test_novel/`。它包含：
-
-- 确认版 `src/` 真源
-- 长篇骨架草案 `data/planning/`
-- 运行态真相文件 `data/world/`
-- 已写章节 `data/manuscript/`
-- canonical workflow `data/workflows/wf_ch_*.yaml`
-
-如果你想快速看当前结构是否完整，可以直接读 `tests/test_standard_test_novel_fixture.py`。
+先聊天，先汇总 idea，先确认基础设定，再改大纲。  
+OpenWrite 现在支持这条闭环，不建议跳过。
 
 ## 版本
 

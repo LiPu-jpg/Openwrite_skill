@@ -37,6 +37,7 @@ class OutlineMdParser:
         Returns:
             OutlineHierarchy 实例
         """
+        md_content = self._strip_ignored_blocks(md_content)
         lines = md_content.split("\n")
         hierarchy = OutlineHierarchy(novel_id=novel_id)
 
@@ -205,11 +206,28 @@ class OutlineMdParser:
                     current_arc.summary += "\n" + stripped
                 else:
                     current_arc.summary = stripped
+            elif current_master:
+                if current_master.summary:
+                    current_master.summary += "\n" + stripped
+                else:
+                    current_master.summary = stripped
 
             i += 1
 
         self._normalize_hierarchy_links(hierarchy)
         return hierarchy
+
+    def _strip_ignored_blocks(self, md_content: str) -> str:
+        """剔除不应进入当前可写窗口解析的扩展区块。"""
+        patterns = (
+            re.compile(
+                r"(?ms)^[ \t]*<!--\s*OPENWRITE:LONG_RANGE_PLAN:START\s*-->\s*\n.*?^[ \t]*<!--\s*OPENWRITE:LONG_RANGE_PLAN:END\s*-->\s*$"
+            ),
+        )
+        cleaned = md_content
+        for pattern in patterns:
+            cleaned = pattern.sub("", cleaned)
+        return cleaned
 
     def _apply_metadata(
         self, node: Optional[OutlineNode], key: str, value: str
@@ -234,6 +252,8 @@ class OutlineMdParser:
             node.ending_direction = value
         elif key_lower in ("世界前提", "world_premise", "世界观"):
             node.world_premise = value
+        elif key_lower in ("故事简介", "简介"):
+            node.summary = value
         elif key_lower in ("基调", "tone"):
             node.tone = value
         elif key_lower in ("目标字数", "word_count_target", "字数"):

@@ -116,13 +116,13 @@ class OutlineMdSerializer:
             metadata.append(f"> 基调: {node.tone}")
         if node.word_count_target:
             metadata.append(f"> 目标字数: {node.word_count_target}")
-        if node.summary:
-            metadata.append(
-                f"> 摘要: {node.summary[:100]}{'...' if len(node.summary) > 100 else ''}"
-            )
 
         if metadata:
             lines.extend(metadata)
+            lines.append("")
+
+        if node.summary:
+            lines.extend(node.summary.strip().splitlines())
             lines.append("")
 
         return lines

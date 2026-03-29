@@ -21,6 +21,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.context_builder import ContextBuilder
+from tools.outline_parser import OutlineMdParser
 from models.outline import OutlineNode, OutlineNodeType, OutlineHierarchy
 from models.context_package import GenerationContext
 
@@ -231,6 +232,31 @@ note = "最信任的同事"
         assert "标签: 都市、异能" in context_text
         assert "细节索引: background、appearance、personality" in context_text
         assert "关联: zhao_lei（最信任的同事）" in context_text
+
+    def test_outline_parser_ignores_long_range_plan_block(self, builder):
+        outline_text = """# 示例小说
+
+## 第一篇：确认范围
+### 第一节：当前可写
+#### 第一章：当前章节
+> 内容焦点: 当前确认窗口内的章节。
+
+<!-- OPENWRITE:LONG_RANGE_PLAN:START -->
+# 全书长线规划：《示例小说》
+
+## 第二篇：未来篇
+### 第一节：未来节
+#### 第一章：未来章节
+> 内容焦点: 这只是长线规划，不该被当成当前可写章节。
+<!-- OPENWRITE:LONG_RANGE_PLAN:END -->
+"""
+
+        hierarchy = OutlineMdParser().parse(outline_text, "test_novel")
+
+        assert len(hierarchy.arcs) == 1
+        assert len(hierarchy.sections) == 1
+        assert len(hierarchy.chapters) == 1
+        assert hierarchy.chapters[0].title == "第一章：当前章节"
 
     def test_get_active_characters_resolves_display_name_to_shared_source(self, builder, project_dir):
         root, novel_id = project_dir

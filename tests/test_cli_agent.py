@@ -37,6 +37,26 @@ def test_cmd_init_uses_default_initializer_and_returns_zero(
     assert (tmp_path / "data" / "novels" / "demo" / "src" / "outline.md").exists()
 
 
+def test_cmd_goethe_routes_to_goethe_runner(monkeypatch: pytest.MonkeyPatch):
+    import tools.goethe as goethe_module
+
+    calls = {"count": 0}
+
+    monkeypatch.setattr(goethe_module, "run_goethe", lambda: calls.__setitem__("count", calls["count"] + 1) or 0)
+
+    assert cli_module._cmd_goethe(SimpleNamespace()) == 0
+    assert calls["count"] == 1
+
+
+def test_main_rejects_legacy_wizard_command(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "wizard"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+
+    assert exc.value.code == 2
+
+
 def test_cmd_agent_routes_through_orchestrator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
     monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
@@ -310,6 +330,8 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
                 "style_documents": {
                     "summary": "冷峻节奏",
                     "prompt_section": "短句推进",
+                    "work.composed": "# 合成风格\n\n克制冷硬，避免解释性总结。",
+                    "craft.dialogue_craft": "# 对话技法\n\n对话短促，避免解释性台词。",
                 },
                 "character_documents": ["# 主角档案\n\n冷静谨慎。"],
                 "concept_documents": {
@@ -341,6 +363,8 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
     assert "背景设定" in captured["context"]["external_context"]
     assert "基础设定" in captured["context"]["external_context"]
     assert "偏冷峻" in captured["context"]["external_context"]
+    assert "克制冷硬" in captured["context"]["style_profile"]
+    assert "对话短促" in captured["context"]["style_profile"]
     assert captured["context"]["current_state"] == "运行态现状"
     assert captured["context"]["foreshadowing_summary"] == "伏笔A"
     assert captured["context"]["recent_chapters"] == "上一章正文"

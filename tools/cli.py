@@ -55,7 +55,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
 
     _add_init_command(subparsers)
-    _add_wizard_command(subparsers)
+    _add_goethe_command(subparsers)
     _add_sync_command(subparsers)
     _add_write_command(subparsers)
     _add_multi_write_command(subparsers)
@@ -104,8 +104,8 @@ def _dispatch(args) -> int:
         return _cmd_style(args)
     elif args.command == "radar":
         return _cmd_radar(args)
-    elif args.command == "wizard":
-        return _cmd_wizard(args)
+    elif args.command == "goethe":
+        return _cmd_goethe(args)
     elif args.command == "status":
         return _cmd_status(args)
     elif args.command == "doctor":
@@ -124,9 +124,9 @@ def _add_init_command(subparsers):
     p.add_argument("--template", "-t", default="default", help="模板类型")
 
 
-def _add_wizard_command(subparsers):
-    """wizard 命令 - 交互式引导"""
-    p = subparsers.add_parser("wizard", help="交互式引导（推荐新手使用）")
+def _add_goethe_command(subparsers):
+    """goethe 命令 - 交互式引导"""
+    p = subparsers.add_parser("goethe", help="交互式引导（推荐新手使用）")
     p.add_argument("--novel-id", help="小说 ID（可选）")
 
 
@@ -809,11 +809,11 @@ def _cmd_style_extract(args) -> int:
     return 0
 
 
-def _cmd_wizard(args) -> int:
+def _cmd_goethe(args) -> int:
     """交互式引导"""
-    from tools.wizard import run_wizard
+    from tools.goethe import run_goethe
 
-    return run_wizard()
+    return run_goethe()
 
 
 def _cmd_radar(args) -> int:
@@ -1055,6 +1055,51 @@ def _render_packet_outline(prompt_sections: dict) -> str:
     return "\n\n".join(parts).strip()
 
 
+def _compose_style_profile(style_documents: dict, *, max_chars: int) -> str:
+    if not isinstance(style_documents, dict):
+        return ""
+
+    labeled_keys = [
+        ("summary", "风格摘要", 600),
+        ("prompt_section", "风格指南", 800),
+        ("work.composed", "作品合成风格", 1200),
+        ("work.fingerprint", "作品风格指纹", 800),
+        ("craft.dialogue_craft", "对话技法", 700),
+        ("craft.scene_craft", "场景技法", 700),
+        ("craft.rhythm_craft", "节奏技法", 700),
+        ("craft.humanization", "去模板化约束", 700),
+        ("craft.ai_patterns", "AI痕迹规避", 700),
+        ("reference.summary", "参考风格摘要", 700),
+        ("reference.voice", "参考叙述声音", 700),
+        ("reference.language", "参考语言习惯", 700),
+        ("reference.rhythm", "参考节奏", 700),
+        ("reference.dialogue", "参考对话", 700),
+        ("reference.consistency", "参考一致性", 700),
+    ]
+
+    parts: list[str] = []
+    used: set[str] = set()
+    for key, label, limit in labeled_keys:
+        value = str(style_documents.get(key, "")).strip()
+        if not value:
+            continue
+        used.add(key)
+        parts.append(f"## {label}\n{value[:limit]}")
+
+    for key in sorted(style_documents.keys()):
+        if key in used:
+            continue
+        value = str(style_documents.get(key, "")).strip()
+        if not value:
+            continue
+        parts.append(f"## {key}\n{value[:600]}")
+
+    profile = "\n\n".join(parts).strip()
+    if max_chars and len(profile) > max_chars:
+        return profile[:max_chars]
+    return profile
+
+
 def _normalize_packet_characters(documents) -> list[dict]:
     characters = []
     if isinstance(documents, dict):
@@ -1159,14 +1204,7 @@ def _build_reviewer_context_payload(context_packet: dict) -> dict:
     outline = str(context_packet.get("outline", "")).strip() or _render_packet_outline(
         context_packet.get("prompt_sections", {})
     )
-    style_profile = "\n\n".join(
-        part
-        for part in [
-            str(style_documents.get("summary", "")).strip(),
-            str(style_documents.get("prompt_section", "")).strip(),
-        ]
-        if part
-    )
+    style_profile = _compose_style_profile(style_documents, max_chars=2500)
 
     payload = {
         "character_profiles": "\n\n".join(character_bits)[:4000],
@@ -1275,11 +1313,7 @@ def _build_writer_context_payload(
         if packet_outline:
             payload["outline"] = packet_outline
 
-        style_parts = [
-            str(style_documents.get("summary", "")).strip(),
-            str(style_documents.get("prompt_section", "")).strip(),
-        ]
-        style_profile = "\n\n".join(part for part in style_parts if part)
+        style_profile = _compose_style_profile(style_documents, max_chars=4000)
         if style_profile:
             payload["style_profile"] = style_profile
 
