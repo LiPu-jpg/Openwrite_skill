@@ -436,6 +436,32 @@ def test_save_compresses_oversized_turn_role(tmp_path: Path):
     assert persisted_size <= MAX_SESSION_BYTES
 
 
+def test_save_compresses_oversized_nested_working_memory_key_name(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {
+        "outer": {"k" * (MAX_SESSION_BYTES * 2): "value"}
+    }
+
+    store.save(state)
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+
+    assert persisted_size <= MAX_SESSION_BYTES
+
+
+def test_save_normalizes_non_dict_working_memory(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = ["not", "a", "dict"]
+
+    store.save(state)
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert isinstance(reloaded["working_memory"], dict)
+    assert reloaded["working_memory"]
+
+
 def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, monkeypatch):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)

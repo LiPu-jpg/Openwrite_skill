@@ -298,7 +298,7 @@ class SessionStateStore:
         data["conversation_summary"] = self._normalize_scalar(
             data["conversation_summary"], ""
         )
-        data["working_memory"] = self._sanitize_yaml_value(data["working_memory"])
+        data["working_memory"] = self._normalize_mapping(data["working_memory"])
         data["open_questions"] = self._sanitize_yaml_value(data["open_questions"])
         data["recent_files"] = self._sanitize_yaml_value(data["recent_files"])
         data["last_action"] = self._normalize_scalar(data["last_action"], "")
@@ -342,8 +342,15 @@ class SessionStateStore:
 
     def _normalize_mapping(self, value: Any) -> dict[str, Any]:
         if not isinstance(value, dict):
-            return {}
-        return dict(value)
+            return {"value": self._sanitize_yaml_value(value)}
+        return {
+            self._truncate_text(
+                self._stringify_scalar(key),
+                MAX_STRUCTURAL_TEXT_BYTES,
+                keep_tail=False,
+            ): self._sanitize_yaml_value(item)
+            for key, item in value.items()
+        }
 
     def _coerce_marker_list(self, value: Any) -> list[CompressionMarker]:
         if value is None:
@@ -376,7 +383,7 @@ class SessionStateStore:
             state.conversation_summary, ""
         )
         state.recent_turns = self._coerce_turn_list(state.recent_turns)
-        state.working_memory = self._sanitize_yaml_value(state.working_memory)
+        state.working_memory = self._normalize_mapping(state.working_memory)
         state.open_questions = self._coerce_string_list(state.open_questions)
         state.recent_files = self._coerce_string_list(state.recent_files)
         state.last_action = self._normalize_scalar(state.last_action, "")
@@ -467,7 +474,14 @@ class SessionStateStore:
         if isinstance(value, list):
             return [self._compact_value(item, budget) for item in value[:8]]
         if isinstance(value, dict):
-            return {str(key): self._compact_value(item, budget) for key, item in list(value.items())[:8]}
+            return {
+                self._truncate_text(
+                    self._stringify_scalar(key),
+                    MAX_STRUCTURAL_TEXT_BYTES,
+                    keep_tail=False,
+                ): self._compact_value(item, budget)
+                for key, item in list(value.items())[:8]
+            }
         return value
 
     def _sanitize_yaml_value(self, value: Any) -> Any:
