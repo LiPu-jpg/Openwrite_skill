@@ -70,13 +70,14 @@ def test_load_or_create_restores_valid_existing_session(tmp_path: Path):
                 "open_questions": ["confirm premise"],
                 "recent_files": ["src/chapter_1.md"],
                 "last_action": "summarize",
-                "compression_markers": [
-                    {
-                        "compressed_at": "2026-03-30T10:00:00",
-                        "dropped_turns": 3,
-                        "kept_turns": 2,
-                    }
-                ],
+                    "compression_markers": [
+                        {
+                            "compressed_at": "2026-03-30T10:00:00",
+                            "dropped_turns": 3,
+                            "kept_turns": 2,
+                            "reason": "count",
+                        }
+                    ],
                 "updated_at": "2026-03-30T10:05:00",
             },
             allow_unicode=True,
@@ -205,6 +206,22 @@ def test_save_compresses_oversized_metadata_payload(tmp_path: Path):
     assert loaded.compression_markers[-1].reason == "size"
 
 
+def test_save_compresses_metadata_only_payload_without_missing_helper(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {"notes": "x" * (MAX_SESSION_BYTES * 2)}
+    state.last_action = "y" * (MAX_SESSION_BYTES // 2)
+
+    store.save(state)
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+    loaded = store.load_or_create()
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert loaded.working_memory
+    assert loaded.compression_markers[-1].reason == "size"
+
+
 def test_repeat_save_is_idempotent_after_compression(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     huge_text = "x" * (MAX_SESSION_BYTES // 2)
@@ -256,6 +273,66 @@ def test_load_or_create_persists_normalized_malformed_data(tmp_path: Path):
     assert reloaded["active_agent"] == "dante"
     assert reloaded["working_memory"] == {}
     assert reloaded["compression_markers"][0]["reason"] == "count"
+
+
+def test_load_or_create_persists_normalized_schema_complete_data(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "legacy-3",
+                "active_agent": "dante",
+                "conversation_summary": "",
+                "recent_turns": [],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [
+                    {
+                        "compressed_at": "2026-03-30T10:00:00",
+                        "dropped_turns": "bad",
+                        "kept_turns": 1,
+                        "reason": "bogus",
+                    }
+                ],
+                "updated_at": "",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert state.session_id == "legacy-3"
+    assert state.compression_markers[0].reason == "count"
+    assert reloaded["compression_markers"][0]["dropped_turns"] == 0
+    assert reloaded["compression_markers"][0]["reason"] == "count"
+
+
+def test_save_stringifies_unsafe_working_memory_values(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+
+    class UnsafeValue:
+        pass
+
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {
+        "nested": {
+            "unsafe": UnsafeValue(),
+            "list": [UnsafeValue(), "ok"],
+        }
+    }
+
+    store.save(state)
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert reloaded["working_memory"]["nested"]["unsafe"].startswith("<")
+    assert reloaded["working_memory"]["nested"]["list"][0].startswith("<")
 
 
 def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, monkeypatch):

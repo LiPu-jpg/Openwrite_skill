@@ -78,9 +78,7 @@ class SessionStateStore:
             return state
 
         state = self._from_dict(data)
-        needs_repair = self._needs_schema_upgrade(data) or (
-            self._to_dict(state) != self._input_to_canonical_dict(data)
-        )
+        needs_repair = self._needs_schema_upgrade(data) or data != self._to_dict(state)
         if needs_repair or self._compress_if_needed(state):
             self.save(state)
         return state
@@ -232,6 +230,12 @@ class SessionStateStore:
         state.recent_files = self._compact_string_list(state.recent_files, turn_budget)
         state.last_action = self._truncate_text(state.last_action, turn_budget, keep_tail=False)
 
+    def _compact_metadata_fields(self, state: DanteSessionState) -> None:
+        state.working_memory = self._compact_mapping(state.working_memory, 32)
+        state.open_questions = self._compact_string_list(state.open_questions, 32)[:4]
+        state.recent_files = self._compact_string_list(state.recent_files, 32)[:4]
+        state.last_action = self._truncate_text(state.last_action, 32, keep_tail=False)
+
     def _hard_truncate_state(self, state: DanteSessionState) -> None:
         state.conversation_summary = self._truncate_text(
             state.conversation_summary, 128, keep_tail=True
@@ -268,11 +272,9 @@ class SessionStateStore:
         return truncated.decode("utf-8", errors="ignore")
 
     def _to_dict(self, state: DanteSessionState) -> dict[str, Any]:
-        return asdict(state)
-
-    def _input_to_canonical_dict(self, data: dict[str, Any]) -> dict[str, Any]:
-        state = self._from_dict(data)
-        return self._to_dict(state)
+        data = asdict(state)
+        data["working_memory"] = self._sanitize_yaml_value(data["working_memory"])
+        return data
 
     def _from_dict(self, data: dict[str, Any]) -> DanteSessionState:
         return DanteSessionState(
@@ -377,3 +379,15 @@ class SessionStateStore:
         if isinstance(value, dict):
             return {str(key): self._compact_value(item, budget) for key, item in list(value.items())[:8]}
         return value
+
+    def _sanitize_yaml_value(self, value: Any) -> Any:
+        if value is None or isinstance(value, (bool, int, float, str)):
+            return value
+        if isinstance(value, list):
+            return [self._sanitize_yaml_value(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                str(key): self._sanitize_yaml_value(item)
+                for key, item in value.items()
+            }
+        return repr(value)
