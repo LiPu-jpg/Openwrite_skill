@@ -184,6 +184,27 @@ def test_save_compresses_huge_turns_by_size(tmp_path: Path):
     assert loaded.compression_markers[-1].reason == "size"
 
 
+def test_save_compresses_oversized_metadata_payload(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    huge_text = "x" * (MAX_SESSION_BYTES)
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {"notes": huge_text}
+    state.open_questions = [huge_text, huge_text]
+    state.recent_files = [f"file-{index}-{huge_text}" for index in range(3)]
+    state.last_action = huge_text
+
+    store.save(state)
+    loaded = store.load_or_create()
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert loaded.working_memory
+    assert loaded.open_questions
+    assert loaded.recent_files
+    assert len(loaded.last_action) <= len(huge_text)
+    assert loaded.compression_markers[-1].reason == "size"
+
+
 def test_repeat_save_is_idempotent_after_compression(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     huge_text = "x" * (MAX_SESSION_BYTES // 2)
@@ -205,6 +226,80 @@ def test_repeat_save_is_idempotent_after_compression(tmp_path: Path):
     assert second.conversation_summary == first_summary
     assert second.recent_turns == first_turns
     assert second.compression_markers == first_markers
+
+
+def test_load_or_create_persists_normalized_malformed_data(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "legacy-2",
+                "conversation_summary": "summary",
+                "recent_turns": [
+                    {"role": "user", "content": "prompt"},
+                ],
+                "compression_markers": [
+                    {"compressed_at": "2026-03-30T10:00:00", "reason": "bogus"}
+                ],
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert state.session_id == "legacy-2"
+    assert reloaded["active_agent"] == "dante"
+    assert reloaded["working_memory"] == {}
+    assert reloaded["compression_markers"][0]["reason"] == "count"
+
+
+def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, monkeypatch):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": "dante",
+                "conversation_summary": "",
+                "recent_turns": [
+                    {"role": "user", "content": "x" * (MAX_SESSION_BYTES)},
+                    {"role": "assistant", "content": "tail"},
+                ],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [],
+                "updated_at": "2026-03-29T09:00:00",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    class FixedDatetime:
+        @staticmethod
+        def now():
+            class FixedNow:
+                def isoformat(self):
+                    return "2026-03-30T12:34:56"
+
+            return FixedNow()
+
+    monkeypatch.setattr("tools.agent.session_state.datetime", FixedDatetime)
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert state.compression_markers[-1].compressed_at == "2026-03-30T12:34:56"
+    assert reloaded["compression_markers"][-1]["compressed_at"] == "2026-03-30T12:34:56"
 
 
 def test_load_or_create_normalizes_malformed_compression_markers(tmp_path: Path):

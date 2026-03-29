@@ -77,9 +77,11 @@ class SessionStateStore:
             self.save(state)
             return state
 
-        needs_upgrade = self._needs_schema_upgrade(data)
         state = self._from_dict(data)
-        if needs_upgrade or self._compress_if_needed(state):
+        needs_repair = self._needs_schema_upgrade(data) or (
+            self._to_dict(state) != self._input_to_canonical_dict(data)
+        )
+        if needs_repair or self._compress_if_needed(state):
             self.save(state)
         return state
 
@@ -132,7 +134,7 @@ class SessionStateStore:
 
         state.compression_markers.append(
             CompressionMarker(
-                compressed_at=state.updated_at or datetime.now().isoformat(),
+                compressed_at=datetime.now().isoformat(),
                 dropped_turns=dropped_turns,
                 kept_turns=len(state.recent_turns),
                 reason="count",
@@ -163,6 +165,10 @@ class SessionStateStore:
                 break
 
         if self._estimate_size(state) > MAX_SESSION_BYTES:
+            self._compact_metadata_fields(state)
+            changed = True
+
+        if self._estimate_size(state) > MAX_SESSION_BYTES:
             self._hard_truncate_state(state)
 
         if self._estimate_size(state) > MAX_SESSION_BYTES:
@@ -170,7 +176,7 @@ class SessionStateStore:
 
         state.compression_markers.append(
             CompressionMarker(
-                compressed_at=state.updated_at or datetime.now().isoformat(),
+                compressed_at=datetime.now().isoformat(),
                 dropped_turns=0,
                 kept_turns=len(state.recent_turns),
                 reason="size",
@@ -221,6 +227,10 @@ class SessionStateStore:
             )
             for turn in state.recent_turns
         ]
+        state.working_memory = self._compact_mapping(state.working_memory, turn_budget)
+        state.open_questions = self._compact_string_list(state.open_questions, turn_budget)
+        state.recent_files = self._compact_string_list(state.recent_files, turn_budget)
+        state.last_action = self._truncate_text(state.last_action, turn_budget, keep_tail=False)
 
     def _hard_truncate_state(self, state: DanteSessionState) -> None:
         state.conversation_summary = self._truncate_text(
@@ -236,6 +246,10 @@ class SessionStateStore:
             ]
         else:
             state.recent_turns = []
+        state.working_memory = self._compact_mapping(state.working_memory, 64)
+        state.open_questions = self._compact_string_list(state.open_questions, 64)
+        state.recent_files = self._compact_string_list(state.recent_files, 64)
+        state.last_action = self._truncate_text(state.last_action, 64, keep_tail=False)
 
     def _truncate_text(
         self, text: str, limit: int, *, keep_tail: bool
@@ -255,6 +269,10 @@ class SessionStateStore:
 
     def _to_dict(self, state: DanteSessionState) -> dict[str, Any]:
         return asdict(state)
+
+    def _input_to_canonical_dict(self, data: dict[str, Any]) -> dict[str, Any]:
+        state = self._from_dict(data)
+        return self._to_dict(state)
 
     def _from_dict(self, data: dict[str, Any]) -> DanteSessionState:
         return DanteSessionState(
@@ -341,3 +359,21 @@ class SessionStateStore:
             return int(value)
         except (TypeError, ValueError):
             return 0
+
+    def _compact_mapping(self, value: dict[str, Any], budget: int) -> dict[str, Any]:
+        compacted: dict[str, Any] = {}
+        for key, item in value.items():
+            compacted[str(key)] = self._compact_value(item, budget)
+        return compacted
+
+    def _compact_string_list(self, value: list[str], budget: int) -> list[str]:
+        return [self._truncate_text(item, budget, keep_tail=False) for item in value[:8]]
+
+    def _compact_value(self, value: Any, budget: int) -> Any:
+        if isinstance(value, str):
+            return self._truncate_text(value, budget, keep_tail=False)
+        if isinstance(value, list):
+            return [self._compact_value(item, budget) for item in value[:8]]
+        if isinstance(value, dict):
+            return {str(key): self._compact_value(item, budget) for key, item in list(value.items())[:8]}
+        return value
