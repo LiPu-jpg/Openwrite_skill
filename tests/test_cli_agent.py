@@ -57,30 +57,44 @@ def test_main_rejects_legacy_wizard_command(monkeypatch: pytest.MonkeyPatch):
     assert exc.value.code == 2
 
 
-def test_cmd_dante_returns_not_implemented_error(caplog: pytest.LogCaptureFixture):
-    with caplog.at_level("ERROR"):
-        result = cli_module._cmd_dante(_fake_args("查看项目状态", max_turns=7, quiet=True))
+def test_cmd_dante_routes_through_orchestrator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
 
-    assert result == 1
-    assert "openwrite dante 尚未实现" in caplog.text
+    expected_tool_executors = {"get_status": lambda args: {"ok": True}}
+    tool_executor_calls: list[Path] = []
 
+    def fake_build_tool_executors(project_root: Path):
+        tool_executor_calls.append(project_root)
+        return expected_tool_executors
 
-def test_main_accepts_legacy_style_dante_args(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(sys, "argv", ["openwrite", "dante", "查看项目状态", "--max-turns", "7", "--quiet"])
+    orchestrator_calls: dict[str, object] = {}
 
-    captured = {}
+    class FakeOrchestrator:
+        def __init__(self, project_root: Path, novel_id: str, tool_executors):
+            orchestrator_calls["project_root"] = project_root
+            orchestrator_calls["novel_id"] = novel_id
+            orchestrator_calls["tool_executors"] = tool_executors
 
-    def fake_dispatch(args):
-        captured["args"] = args
-        return 0
+        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
+            orchestrator_calls["instruction"] = instruction
+            orchestrator_calls["quiet"] = quiet
+            orchestrator_calls["max_turns"] = max_turns
+            return 0
 
-    monkeypatch.setattr(cli_module, "_dispatch", fake_dispatch)
+    monkeypatch.setattr(tool_runtime_module, "build_tool_executors", fake_build_tool_executors)
+    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
 
-    assert cli_module.main() == 0
-    assert captured["args"].command == "dante"
-    assert captured["args"].instruction == "查看项目状态"
-    assert captured["args"].max_turns == 7
-    assert captured["args"].quiet is True
+    result = cli_module._cmd_dante(_fake_args("查看项目状态", max_turns=7, quiet=True))
+
+    assert result == 0
+    assert tool_executor_calls == [tmp_path]
+    assert orchestrator_calls["project_root"] == tmp_path
+    assert orchestrator_calls["novel_id"] == "demo"
+    assert orchestrator_calls["tool_executors"] is expected_tool_executors
+    assert orchestrator_calls["instruction"] == "查看项目状态"
+    assert orchestrator_calls["quiet"] is True
+    assert orchestrator_calls["max_turns"] == 7
 
 
 def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
@@ -103,6 +117,19 @@ def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
     assert called["value"] is False
     assert "openwrite agent 已退役" in caplog.text
     assert "openwrite dante" in caplog.text
+
+
+def test_main_agent_help_shows_retirement_notice(monkeypatch: pytest.MonkeyPatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "agent", "--help"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+
+    captured = capsys.readouterr()
+
+    assert exc.value.code == 0
+    assert "已退役" in captured.out
+    assert "openwrite dante" in captured.out
 
 
 def test_run_cli_status_instruction_is_read_only(tmp_path: Path):

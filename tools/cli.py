@@ -230,7 +230,11 @@ def _add_doctor_command(subparsers):
 
 def _add_agent_command(subparsers):
     """agent 命令 - 已退役"""
-    p = subparsers.add_parser("agent", help="已退役：请改用 openwrite dante")
+    p = subparsers.add_parser(
+        "agent",
+        help="已退役：请改用 openwrite dante",
+        description="已退役：请改用 openwrite dante",
+    )
     p.add_argument("instruction", nargs="?", default="查看项目状态", help="自然语言指令")
     p.add_argument("--max-turns", type=int, default=20, help="最大循环次数")
     p.add_argument("--quiet", action="store_true", help="静默模式")
@@ -828,9 +832,35 @@ def _cmd_goethe(args) -> int:
 
 
 def _cmd_dante(args) -> int:
-    """Dante 入口占位"""
-    logger.error("openwrite dante 尚未实现，请稍后再试。")
-    return 1
+    """Dante 入口 - 过渡性封装"""
+    project_root = Path.cwd()
+    config = _load_config(project_root)
+    if not config:
+        logger.error("未找到 novel_config.yaml，请先运行 openwrite init")
+        return 1
+
+    novel_id = config.get("novel_id") or "current"
+
+    try:
+        from tools.agent.orchestrator import OpenWriteOrchestrator
+        from tools.agent.tool_runtime import build_tool_executors
+
+        orchestrator = OpenWriteOrchestrator(
+            project_root=project_root,
+            novel_id=novel_id,
+            tool_executors=build_tool_executors(project_root),
+        )
+        return orchestrator.run_cli(
+            instruction=args.instruction,
+            quiet=args.quiet,
+            max_turns=args.max_turns,
+        )
+    except ImportError as e:
+        logger.error(f"Agent 模块未安装: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Agent 执行失败: {e}")
+        return 1
 
 
 def _cmd_radar(args) -> int:
