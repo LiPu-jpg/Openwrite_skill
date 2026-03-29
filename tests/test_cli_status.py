@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import tools.cli as cli_module
+from tools.agent.book_state import BookStateStore, BookStage
 
 
 def _write_config(tmp_path: Path, content: str) -> None:
@@ -120,3 +121,28 @@ def test_cmd_status_counts_unique_final_chapters_across_arcs(
 
     assert cli_module._cmd_status(SimpleNamespace()) == 0
     assert "已写章节: 2" in info_messages
+
+
+def test_cmd_status_prefers_book_state_current_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    _write_config(
+        tmp_path,
+        "novel_id: demo\ncurrent_arc: arc_001\ncurrent_chapter: ch_001\n",
+    )
+
+    state_store = BookStateStore(tmp_path, "demo")
+    state = state_store.load_or_create()
+    state.stage = BookStage.CHAPTER_PREFLIGHT
+    state.current_arc = "arc_002"
+    state.current_chapter = "ch_007"
+    state_store.save(state)
+
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+
+    info_messages: list[str] = []
+    monkeypatch.setattr(cli_module.logger, "info", info_messages.append)
+
+    assert cli_module._cmd_status(SimpleNamespace()) == 0
+    assert "当前篇: arc_002" in info_messages
+    assert "当前章: ch_007" in info_messages

@@ -20,6 +20,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from tools.frontmatter import compose_toml_document
+
 
 def init_project(project_root: Path, novel_id: str, title: Optional[str] = None):
     """初始化小说项目
@@ -100,7 +102,14 @@ current_chapter: ch_001
 
     rules_path = novel_root / "src" / "world" / "rules.md"
     if not rules_path.exists():
-        rules_content = """# 世界底层规则
+        rules_content = compose_toml_document(
+            {
+                "id": "world_rules",
+                "type": "world_document",
+                "summary": "作品的底层规则、限制与未知项。",
+                "detail_refs": ["力量体系", "社会规则", "物理法则"],
+            },
+            """# 世界底层规则
 
 ## 力量体系
 - （待填充）
@@ -110,29 +119,46 @@ current_chapter: ch_001
 
 ## 物理法则
 - （待填充）
-"""
+""",
+        )
         rules_path.write_text(rules_content, encoding="utf-8")
         print(f"✓ 创建规则: data/novels/{novel_id}/src/world/rules.md")
 
     timeline_path = novel_root / "src" / "world" / "timeline.md"
     if not timeline_path.exists():
-        timeline_content = """# 关键事件时间线
+        timeline_content = compose_toml_document(
+            {
+                "id": "world_timeline",
+                "type": "world_document",
+                "summary": "作品关键事件的时间顺序记录。",
+                "detail_refs": ["时间线"],
+            },
+            """# 关键事件时间线
 
 | 时间 | 事件 | 涉及章节 | 影响 |
 |------|------|----------|------|
 | （待填充） | | | |
-"""
+""",
+        )
         timeline_path.write_text(timeline_content, encoding="utf-8")
         print(f"✓ 创建时间线: data/novels/{novel_id}/src/world/timeline.md")
 
     terminology_path = novel_root / "src" / "world" / "terminology.md"
     if not terminology_path.exists():
-        terminology_content = """# 术语表
+        terminology_content = compose_toml_document(
+            {
+                "id": "world_terminology",
+                "type": "world_document",
+                "summary": "作品内高频术语与概念定义。",
+                "detail_refs": ["术语表"],
+            },
+            """# 术语表
 
 | 术语 | 定义 | 分类 |
 |------|------|------|
 | （待填充） | | |
-"""
+""",
+        )
         terminology_path.write_text(terminology_content, encoding="utf-8")
         print(f"✓ 创建术语表: data/novels/{novel_id}/src/world/terminology.md")
 

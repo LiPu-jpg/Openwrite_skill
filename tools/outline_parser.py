@@ -79,6 +79,9 @@ class OutlineMdParser:
 
                 if level == 1:
                     # 总纲
+                    current_arc = None
+                    current_section = None
+                    current_chapter = None
                     current_master = OutlineNode(
                         node_id="master",
                         node_type=OutlineNodeType.MASTER,
@@ -87,6 +90,8 @@ class OutlineMdParser:
                     hierarchy.master = current_master
 
                 elif level == 2:
+                    current_section = None
+                    current_chapter = None
                     # 检查是否是"关键转折点"特殊节
                     if "关键转折点" in title:
                         in_key_turns = True
@@ -108,6 +113,7 @@ class OutlineMdParser:
 
                 elif level == 3:
                     # 节纲
+                    current_chapter = None
                     section_counter += 1
                     section_id = f"sec_{section_counter:03d}"
                     current_section = OutlineNode(
@@ -202,6 +208,7 @@ class OutlineMdParser:
 
             i += 1
 
+        self._normalize_hierarchy_links(hierarchy)
         return hierarchy
 
     def _apply_metadata(
@@ -241,10 +248,7 @@ class OutlineMdParser:
                 node.core_theme = value
                 node.arc_theme = value
         elif key_lower in ("起止章节", "chapters"):
-            # 解析 "ch_001 - ch_010" 格式
-            chapter_ids = self._parse_chapter_range(value)
-            if chapter_ids:
-                node.children_ids.extend(chapter_ids)
+            node.chapter_range = value
         elif key_lower in ("摘要", "summary"):
             node.summary = value
         elif key_lower in ("篇弧线", "篇结构", "arc_structure"):
@@ -261,10 +265,13 @@ class OutlineMdParser:
             node.section_emotional_arc = value
         elif key_lower in ("节张力", "张力", "section_tension"):
             node.section_tension = value
-        elif key_lower in ("涉及人物", "characters", "人物"):
-            # 解析逗号分隔的人物列表
-            characters = [c.strip() for c in value.split(",") if c.strip()]
+        elif key_lower in ("涉及人物", "出场人物", "出场角色", "characters", "人物", "角色"):
+            # 解析中英文逗号/顿号分隔的人物列表
+            characters = [c.strip() for c in re.split(r"[，,、]", value) if c.strip()]
             node.involved_characters.extend(characters)
+        elif key_lower in ("涉及设定", "涉及概念", "设定", "概念", "settings", "concepts"):
+            settings = [s.strip() for s in re.split(r"[，,、]", value) if s.strip()]
+            node.involved_settings.extend(settings)
 
         # 章纲字段
         elif key_lower in ("预估字数", "estimated_words", "字数"):
@@ -354,3 +361,22 @@ class OutlineMdParser:
             return [f"ch_{n:03d}"]
 
         return []
+
+    def _normalize_hierarchy_links(self, hierarchy: OutlineHierarchy) -> None:
+        """Normalize parser output so arc children only point to sections."""
+
+        section_ids = {section.node_id for section in hierarchy.sections}
+        chapter_ids = {chapter.node_id for chapter in hierarchy.chapters}
+
+        for arc in hierarchy.arcs:
+            sections = [child_id for child_id in arc.children_ids if child_id in section_ids]
+            direct_chapters = [child_id for child_id in arc.children_ids if child_id in chapter_ids]
+            chosen = sections or direct_chapters
+            deduped: List[str] = []
+            seen = set()
+            for child_id in chosen:
+                if child_id in seen:
+                    continue
+                seen.add(child_id)
+                deduped.append(child_id)
+            arc.children_ids = deduped

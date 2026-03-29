@@ -1,7 +1,7 @@
 nodes:
   f001:
     id: f001
-    content: 手腕符文印记 - 陈明加班时手腕若隐若现的淡蓝色符文
+    content: 腕部符文印记首次出现，陈明误以为是过劳幻觉
     weight: 8
     layer: 主线
     status: 待收
@@ -9,66 +9,108 @@ nodes:
     target_arc: arc_001
     target_section: sec_001
     target_chapter: ch_003
-    tags: []
+    tags:
+    - 觉醒
+    - 符文
   f002:
     id: f002
-    content: 术法觉醒标志 - 符文在能力失控时剧烈发光，与符文印记相互印证
-    weight: 7
+    content: 会议室事故中符文剧烈发光，确认能力会在紧张状态下失控
+    weight: 8
     layer: 主线
     status: 已收
     created_at: arc_001/sec_001
     target_arc: arc_001
     target_section: sec_001
     target_chapter: ch_003
-    tags: []
+    tags:
+    - 回收
+    - 失控
   f003:
     id: f003
-    content: 服务器日志异常 - 陈明用术法定位故障节点时留下的监控异常
-    weight: 6
+    content: 线上事故后的异常日志波动，后续会成为审计与追查的入口
+    weight: 9
     layer: 主线
     status: 待收
     created_at: arc_001/sec_002
-    target_arc: arc_002
-    target_section: sec_002
-    target_chapter: null
-    tags: []
+    target_arc: arc_001
+    target_section: sec_003
+    target_chapter: ch_009
+    tags:
+    - 日志
+    - 物证
   f004:
     id: f004
-    content: 赵磊的怀疑 - 他开始记录陈明的异常行为
-    weight: 5
+    content: 赵磊开始主动记录陈明近期的异常表现
+    weight: 6
     layer: 支线
     status: 待收
-    created_at: arc_002/sec_001
-    target_arc: arc_002
+    created_at: arc_001/sec_002
+    target_arc: arc_001
     target_section: sec_002
-    target_chapter: null
-    tags: []
+    target_chapter: ch_008
+    tags:
+    - 好友线
   f005:
     id: f005
-    content: 林月的关注 - 她注意到陈明绩效异常，开始调查日志
-    weight: 6
+    content: 林月在复盘中注意到日志异常，但暂时没有点破
+    weight: 7
     layer: 主线
     status: 待收
-    created_at: arc_002/sec_001
-    target_arc: arc_002
-    target_section: sec_001
-    target_chapter: null
-    tags: []
+    created_at: arc_001/sec_002
+    target_arc: arc_001
+    target_section: sec_003
+    target_chapter: ch_013
+    tags:
+    - 上司线
   f006:
     id: f006
-    content: 深夜公园练习 - 陈明被夜跑路人看到影子
-    weight: 4
+    content: B3机房与旧值班单存在时间线错位
+    weight: 8
+    layer: 主线
+    status: 待收
+    created_at: arc_001/sec_003
+    target_arc: arc_001
+    target_section: sec_003
+    target_chapter: ch_011
+    tags:
+    - 机房
+    - 旧档案
+  f007:
+    id: f007
+    content: 徐墨递出的红色需求文档会引导讨论偏移
+    weight: 7
     layer: 支线
     status: 待收
-    created_at: arc_002/sec_001
+    created_at: arc_001/sec_004
+    target_arc: arc_001
+    target_section: sec_004
+    target_chapter: ch_016
+    tags:
+    - 文档
+    - 需求
+  f008:
+    id: f008
+    content: 灰井论坛里已经出现与滨海市相似的案例描述
+    weight: 9
+    layer: 远期主线
+    status: 待收
+    created_at: arc_001/sec_004
     target_arc: arc_002
-    target_section: null
-    target_chapter: null
-    tags: []
+    target_section: sec_002
+    target_chapter: ch_206
+    tags:
+    - 外部世界
+    - 长线
 edges:
 - from: f001
   to: f002
   type: 依赖
+- from: f003
+  to: f005
+  type: 触发
+- from: f006
+  to: f008
+  type: 延伸
 status:
   f001: 待收
   f002: 已收
@@ -76,3 +118,5 @@ status:
   f004: 待收
   f005: 待收
   f006: 待收
+  f007: 待收
+  f008: 待收

@@ -1,8 +1,8 @@
 novel_id: test_novel
-stage: review_and_revise
-current_arc: ''
-current_section: ''
-current_chapter: ch_001
+stage: chapter_preflight
+current_arc: arc_001
+current_section: sec_002
+current_chapter: ch_007
 pending_confirmation: ''
 blocking_reason: ''
-last_agent_action: delegated_writing
+last_agent_action: recorded_ideation

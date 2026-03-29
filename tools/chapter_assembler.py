@@ -23,7 +23,9 @@ import yaml
 
 from models.outline import OutlineHierarchy, OutlineNode, OutlineNodeType
 from tools.agent_policy import get_default_agent_specs, get_redundant_agent_specs
+from tools.outline_cache import deserialize_outline_hierarchy
 from tools.outline_parser import OutlineMdParser
+from tools.shared_documents import render_indexed_document, resolve_shared_document_path
 from tools.source_sync import ensure_runtime_fresh
 from tools.story_planning import StoryPlanningStore
 from tools.truth_manager import TruthFilesManager
@@ -297,66 +299,7 @@ class ChapterAssemblerV2:
             return OutlineHierarchy(novel_id=self.novel_id)
 
         data = self._load_yaml(path)
-        source_meta = self._load_outline_chapter_metadata()
-        hierarchy = OutlineHierarchy(novel_id=self.novel_id)
-
-        story_info = data.get("story_info", {})
-        if story_info:
-            hierarchy.master = OutlineNode(
-                node_id="master",
-                node_type=OutlineNodeType.MASTER,
-                title=story_info.get("title", ""),
-                summary=story_info.get("theme", ""),
-                core_theme=story_info.get("theme", ""),
-                world_premise=story_info.get("world_premise", ""),
-                word_count_target=self._to_int(story_info.get("word_count_estimate", 0)),
-            )
-
-        for arc in data.get("arcs", []):
-            hierarchy.arcs.append(
-                OutlineNode(
-                    node_id=arc.get("id", ""),
-                    node_type=OutlineNodeType.ARC,
-                    title=arc.get("title", ""),
-                    summary=arc.get("description", ""),
-                    arc_structure=arc.get("arc_structure", ""),
-                    arc_emotional_arc=arc.get("arc_emotional_arc", ""),
-                    children_ids=list(arc.get("chapters", [])),
-                )
-            )
-
-        for sec in data.get("sections", []):
-            hierarchy.sections.append(
-                OutlineNode(
-                    node_id=sec.get("id", ""),
-                    node_type=OutlineNodeType.SECTION,
-                    title=sec.get("title", ""),
-                    section_structure=sec.get("section_structure", ""),
-                    section_emotional_arc=sec.get("section_emotional_arc", ""),
-                    section_tension=sec.get("section_tension", ""),
-                    parent_id=sec.get("arc_id", ""),
-                    children_ids=list(sec.get("chapters", [])),
-                )
-            )
-
-        for ch in data.get("chapters", []):
-            chapter_id = ch.get("id", "")
-            meta = source_meta.get(chapter_id, {})
-            hierarchy.chapters.append(
-                OutlineNode(
-                    node_id=chapter_id,
-                    node_type=OutlineNodeType.CHAPTER,
-                    title=ch.get("title", ""),
-                    summary=meta.get("summary", ch.get("summary", "")),
-                    dramatic_position=meta.get("dramatic_position", ch.get("dramatic_position", "")),
-                    content_focus=meta.get("content_focus", ch.get("content_focus", ch.get("summary", ""))),
-                    involved_characters=list(meta.get("involved_characters", ch.get("involved_characters", []))),
-                    involved_settings=list(meta.get("involved_settings", ch.get("involved_settings", []))),
-                    estimated_words=self._to_int(ch.get("word_count", 0)),
-                )
-            )
-
-        return hierarchy
+        return deserialize_outline_hierarchy(data, self.novel_id)
 
     def _build_story_background(self, hierarchy: OutlineHierarchy) -> str:
         story_background = self.story_planning_store.read_story_document("background", max_chars=1600)
@@ -391,10 +334,14 @@ class ChapterAssemblerV2:
         for i, arc in enumerate(hierarchy.arcs):
             if i > current_index:
                 break
-            chapter_summaries = self._collect_chapter_summaries(hierarchy, arc.children_ids)
+            chapter_summaries = self._collect_chapter_summaries(
+                hierarchy,
+                [chapter.node_id for chapter in hierarchy.get_chapters_by_arc(arc.node_id)],
+            )
             seed = "\n".join(
                 [
                     f"篇标题：{arc.title}",
+                    f"篇梗概：{arc.summary}",
                     f"篇弧线：{arc.arc_structure}",
                     f"篇情感：{arc.arc_emotional_arc}",
                     f"章节推进：{chapter_summaries}",
@@ -423,6 +370,7 @@ class ChapterAssemblerV2:
             summary_seed = "\n".join(
                 [
                     f"节标题：{sec.title}",
+                    f"节梗概：{sec.summary}",
                     f"节结构：{sec.section_structure}",
                     f"节情感：{sec.section_emotional_arc}",
                     f"节张力：{sec.section_tension}",
@@ -506,15 +454,34 @@ class ChapterAssemblerV2:
 
     def _load_character_documents(self, character_ids: List[str]) -> Dict[str, str]:
         docs: Dict[str, str] = {}
+        character_root = self.src_root / "characters"
         for char_id in character_ids:
-            src_path = self.src_root / "characters" / f"{char_id}.md"
+            src_path = resolve_shared_document_path(character_root, char_id) or (
+                character_root / f"{char_id}.md"
+            )
             if src_path.exists():
-                docs[char_id] = self._fit_text(self._load_text(src_path), min_chars=500, max_chars=2200)
+                docs[char_id] = self._fit_text(
+                    render_indexed_document(
+                        self._load_text(src_path),
+                        default_meta={"name": char_id},
+                        max_chars=2200,
+                    ),
+                    min_chars=500,
+                    max_chars=2200,
+                )
                 continue
 
             profile_path = self.runtime_root / "characters" / "profiles" / f"{char_id}.md"
             if profile_path.exists():
-                docs[char_id] = self._fit_text(self._load_text(profile_path), min_chars=500, max_chars=2200)
+                docs[char_id] = self._fit_text(
+                    render_indexed_document(
+                        self._load_text(profile_path),
+                        default_meta={"name": char_id},
+                        max_chars=2200,
+                    ),
+                    min_chars=500,
+                    max_chars=2200,
+                )
                 continue
 
             card_path = self.runtime_root / "characters" / "cards" / f"{char_id}.yaml"
@@ -557,10 +524,31 @@ class ChapterAssemblerV2:
         if not world_root.exists():
             return docs
 
+        world_defaults = {
+            "rules.md": {
+                "name": "世界规则",
+                "summary": "作品的底层规则、限制与未知项。",
+                "detail_refs": ["力量体系", "社会规则", "物理法则", "禁忌与未知"],
+            },
+            "terminology.md": {
+                "name": "术语表",
+                "summary": "作品内高频术语与概念定义。",
+                "detail_refs": ["术语表"],
+            },
+            "timeline.md": {
+                "name": "时间线",
+                "summary": "作品当前已知的重要事件顺序。",
+                "detail_refs": [],
+            },
+        }
         for base_name in ["rules.md", "terminology.md", "timeline.md"]:
             p = world_root / base_name
             if p.exists():
-                docs[f"world.{p.stem}"] = self._load_text(p)
+                docs[f"world.{p.stem}"] = render_indexed_document(
+                    self._load_text(p),
+                    default_meta=world_defaults.get(base_name, {"name": p.stem}),
+                    max_chars=1800,
+                )
 
         entities = world_root / "entities"
         if entities.exists():
@@ -568,11 +556,25 @@ class ChapterAssemblerV2:
             for p in sorted(entities.glob("*.md")):
                 text = self._load_text(p)
                 if not concept_set:
-                    docs[f"entity.{p.stem}"] = text
+                    docs[f"entity.{p.stem}"] = render_indexed_document(
+                        text,
+                        default_meta={
+                            "name": p.stem,
+                            "detail_refs": ["规则", "特征", "关联"],
+                        },
+                        max_chars=1800,
+                    )
                     continue
                 stem = p.stem.lower()
                 if stem in concept_set or any(c in text.lower() for c in concept_set):
-                    docs[f"entity.{p.stem}"] = text
+                    docs[f"entity.{p.stem}"] = render_indexed_document(
+                        text,
+                        default_meta={
+                            "name": p.stem,
+                            "detail_refs": ["规则", "特征", "关联"],
+                        },
+                        max_chars=1800,
+                    )
 
         return docs
 
@@ -594,52 +596,6 @@ class ChapterAssemblerV2:
         if len(cleaned) < min_chars and cleaned:
             return cleaned
         return cleaned
-
-    def _load_outline_chapter_metadata(self) -> Dict[str, Dict[str, Any]]:
-        """从 src/outline.md 中提取章节元数据。"""
-        outline_path = self.src_root / "outline.md"
-        if not outline_path.exists():
-            return {}
-
-        text = self._load_text(outline_path)
-        lines = text.splitlines()
-        result: Dict[str, Dict[str, Any]] = {}
-
-        chapter_idx = 0
-        current_chapter_id = ""
-        for raw in lines:
-            line = raw.strip()
-            if not line:
-                continue
-
-            heading = re.match(r"^####\s+(.+)$", line)
-            if heading:
-                chapter_idx += 1
-                current_chapter_id = f"ch_{chapter_idx:03d}"
-                result[current_chapter_id] = {"title": heading.group(1).strip()}
-                continue
-
-            if not current_chapter_id:
-                continue
-
-            meta = re.match(r"^>\s*([^:：]+)[:：]\s*(.*)$", line)
-            if not meta:
-                continue
-
-            key = meta.group(1).strip()
-            value = meta.group(2).strip()
-            node = result[current_chapter_id]
-            if key in {"内容焦点", "梗概", "摘要"}:
-                node["content_focus"] = value
-                node["summary"] = value
-            elif key in {"戏剧位置"}:
-                node["dramatic_position"] = value
-            elif key in {"出场角色", "涉及人物"}:
-                node["involved_characters"] = [x.strip() for x in value.split(",") if x.strip()]
-            elif key in {"涉及概念", "涉及设定"}:
-                node["involved_settings"] = [x.strip() for x in value.split(",") if x.strip()]
-
-        return result
 
     def _dedupe(self, values: List[str]) -> List[str]:
         out: List[str] = []
@@ -667,9 +623,3 @@ class ChapterAssemblerV2:
     def _parse_chapter_index(self, chapter_id: str) -> int:
         m = re.search(r"(\d+)", chapter_id)
         return int(m.group(1)) if m else 0
-
-    def _to_int(self, value: Any) -> int:
-        try:
-            return int(value)
-        except Exception:
-            return 0

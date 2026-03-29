@@ -19,6 +19,7 @@ from .writer import WriterAgent, WritingResult
 from .reviewer import ReviewerAgent, ReviewResult
 from ..chapter_assembler import ChapterAssemblerV2, ChapterAssemblyPacket, ROLE_SYSTEM_PROMPTS
 from ..context_schema import normalize_context_payload, normalize_truth_file_key
+from ..shared_documents import normalize_world_entity_document
 from ..truth_manager import TruthFilesManager
 from ..agent_policy import get_default_agent_specs
 
@@ -72,7 +73,7 @@ class MultiAgentDirector:
                 "recent_chapters": packet.previous_chapter_content,
                 "dramatic_context": self._extract_dramatic_context(packet),
             },
-            include_aliases=True,
+            include_aliases=False,
         )
 
         chapter_number = self._parse_chapter_index(chapter_id)
@@ -153,10 +154,14 @@ class MultiAgentDirector:
             if target.exists():
                 continue
             target.write_text(
-                f"# {concept}\n\n"
-                "## 定义\n- （待补充）\n\n"
-                "## 规则\n- （待补充）\n\n"
-                "## 与主线关系\n- （待补充）\n",
+                normalize_world_entity_document(
+                    "",
+                    fallback_id=slug,
+                    fallback_name=concept,
+                    fallback_summary=f"章节初稿中首次出现的概念“{concept}”，待补充规则、特征与关联。",
+                    default_type="concept",
+                    default_subtype="emergent",
+                ),
                 encoding="utf-8",
             )
             created.append(concept)

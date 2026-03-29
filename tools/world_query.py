@@ -4,10 +4,11 @@
 LLM 通过此工具快速了解全部世界观实体，按需再 Read 具体文件。
 
 用法:
-    python3 tools/world_query.py <novel_id>                    # 列出所有实体摘要
-    python3 tools/world_query.py <novel_id> <entity_id>        # 查看单个实体详情
-    python3 tools/world_query.py <novel_id> --type concept     # 按类型筛选
-    python3 tools/world_query.py <novel_id> --relations        # 输出关系图谱
+    python3 -m tools.world_query <novel_id>                    # 列出所有实体摘要
+    python3 -m tools.world_query <novel_id> <entity_id>        # 查看单个实体详情
+    python3 -m tools.world_query <novel_id> --type concept     # 按类型筛选
+    python3 -m tools.world_query <novel_id> --relations        # 输出关系图谱
+    python3 tools/world_query.py <novel_id>                    # 兼容直跑
 """
 
 from __future__ import annotations
@@ -16,6 +17,9 @@ import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tools.frontmatter import parse_toml_front_matter
 

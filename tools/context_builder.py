@@ -34,6 +34,8 @@ from models.context_package import (
 )
 from .truth_manager import TruthFilesManager
 from .frontmatter import parse_toml_front_matter
+from .outline_cache import deserialize_outline_hierarchy
+from .shared_documents import render_indexed_document, resolve_shared_document_path
 from .source_sync import ensure_runtime_fresh
 from .outline_parser import OutlineMdParser
 
@@ -206,68 +208,7 @@ class ContextBuilder:
 
     def _parse_hierarchy_yaml(self, data: Dict[str, Any]) -> OutlineHierarchy:
         """解析 hierarchy.yaml 为 OutlineHierarchy"""
-        hierarchy = OutlineHierarchy(novel_id=self.novel_id)
-
-        # 解析总纲
-        story_info = data.get("story_info", {})
-        if story_info:
-            hierarchy.master = OutlineNode(
-                node_id="master",
-                node_type=OutlineNodeType.MASTER,
-                title=story_info.get("title", ""),
-                summary=story_info.get("theme", ""),
-                word_count_target=story_info.get("word_count_estimate", 0),
-            )
-
-        # 解析篇纲
-        arcs_data = data.get("arcs", [])
-        for idx, arc in enumerate(arcs_data):
-            arc_node = OutlineNode(
-                node_id=arc.get("id", f"arc_{idx + 1}"),
-                node_type=OutlineNodeType.ARC,
-                title=arc.get("title", ""),
-                summary=arc.get("description", ""),
-                arc_structure=arc.get("arc_structure", ""),
-                arc_emotional_arc=arc.get("arc_emotional_arc", ""),
-                children_ids=arc.get("chapters", []),
-            )
-            hierarchy.arcs.append(arc_node)
-
-        # 解析节纲
-        sections_data = data.get("sections", [])
-        for idx, sec in enumerate(sections_data):
-            section_node = OutlineNode(
-                node_id=sec.get("id", f"sec_{idx + 1:03d}"),
-                node_type=OutlineNodeType.SECTION,
-                title=sec.get("title", ""),
-                parent_id=sec.get("arc_id", ""),
-                section_structure=sec.get("section_structure", ""),
-                section_emotional_arc=sec.get("section_emotional_arc", ""),
-                section_tension=sec.get("section_tension", ""),
-                children_ids=sec.get("chapters", []),
-            )
-            hierarchy.sections.append(section_node)
-
-        # 解析章节
-        chapters_data = data.get("chapters", [])
-        for idx, ch in enumerate(chapters_data):
-            chapter_node = OutlineNode(
-                node_id=ch.get("id", f"ch_{idx + 1:03d}"),
-                node_type=OutlineNodeType.CHAPTER,
-                title=ch.get("title", ""),
-                summary=ch.get("summary", ""),
-                word_count_target=ch.get("word_count", 6000),
-                estimated_words=ch.get("word_count", 6000),
-                goals=ch.get("goals", []),
-                dramatic_position=ch.get("dramatic_position", ""),
-                content_focus=ch.get("content_focus", ch.get("summary", "")),
-                involved_characters=ch.get("involved_characters", []),
-                involved_settings=ch.get("involved_settings", []),
-                status=ch.get("status", "draft"),
-            )
-            hierarchy.chapters.append(chapter_node)
-
-        return hierarchy
+        return deserialize_outline_hierarchy(data, self.novel_id)
 
     def _get_outline_window(
         self, chapter_id: str, window_size: int, hierarchy: OutlineHierarchy
@@ -317,9 +258,11 @@ class ContextBuilder:
 
         for char_id in character_ids:
             # 尝试加载 profile (markdown)
-            profile_path = profiles_dir / f"{char_id}.md"
+            profile_path = resolve_shared_document_path(profiles_dir, char_id) or (
+                profiles_dir / f"{char_id}.md"
+            )
             if profile_path.exists():
-                profile = self._parse_character_profile(profile_path, char_id)
+                profile = self._parse_character_profile(profile_path, profile_path.stem)
                 if profile:
                     profiles.append(profile)
                     continue
@@ -705,30 +648,42 @@ class ContextBuilder:
         if not self.data_dir.exists():
             return setting
 
-        # 加载世界观规则（优先 src）
         world_path = self.src_dir / "world" / "rules.md"
-        if not world_path.exists():
-            world_path = self.data_dir / "world" / "rules.md"
         if world_path.exists():
-            text = self._load_text(world_path)
-            setting["worldbuilding"] = text[:1000]
+            setting["worldbuilding"] = render_indexed_document(
+                self._load_text(world_path),
+                default_meta={
+                    "name": "世界规则",
+                    "summary": "作品的底层规则、限制与未知项。",
+                    "detail_refs": ["力量体系", "社会规则", "物理法则", "禁忌与未知"],
+                },
+                max_chars=1000,
+            )
 
         # 加载术语表
         term_path = self.src_dir / "world" / "terminology.md"
-        if not term_path.exists():
-            term_path = self.data_dir / "world" / "terminology.md"
         if term_path.exists():
-            text = self._load_text(term_path)
-            setting["terminology"] = text[:500]
+            setting["terminology"] = render_indexed_document(
+                self._load_text(term_path),
+                default_meta={
+                    "name": "术语表",
+                    "summary": "作品内高频术语与概念定义。",
+                    "detail_refs": ["术语表"],
+                },
+                max_chars=500,
+            )
 
-        # 加载角色设定（优先 src/characters）
         profiles_dir = self.src_dir / "characters"
-        if not profiles_dir.exists():
-            profiles_dir = self.data_dir / "characters" / "profiles"
         if profiles_dir.exists():
             chars_text = []
             for p in sorted(profiles_dir.glob("*.md"))[:5]:
-                chars_text.append(self._load_text(p)[:300])
+                chars_text.append(
+                    render_indexed_document(
+                        self._load_text(p),
+                        default_meta={"name": p.stem},
+                        max_chars=300,
+                    )
+                )
             if chars_text:
                 setting["characters"] = "\n---\n".join(chars_text)
 
@@ -769,7 +724,7 @@ class ContextBuilder:
 
         world_dir = self.src_dir / "world"
         if not world_dir.exists():
-            world_dir = self.data_dir / "world"
+            return rules
 
         # 1. 从 world/rules.md 加载世界规则
         rules_path = world_dir / "rules.md"

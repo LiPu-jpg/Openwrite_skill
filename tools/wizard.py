@@ -291,6 +291,8 @@ class WizardChatAgent:
         """AI 生成设定"""
         from tools.agent import AgentContext
         from tools.architect import ArchitectAgent
+        from tools.story_planning import StoryPlanningStore
+        from tools.truth_manager import TruthFilesManager
 
         novel_id = args.get("novel_id", "")
         brief = args.get("brief", "")
@@ -299,11 +301,19 @@ class WizardChatAgent:
         ctx = AgentContext(self.client, self.llm_config.model, str(project_root))
         architect = ArchitectAgent(ctx)
 
-        config_path = project_root / "data" / "novels" / novel_id / "novel_config.yaml"
+        config_path = project_root / "novel_config.yaml"
+        fallback_config_path = project_root / "data" / "novels" / novel_id / "novel_config.yaml"
         if config_path.exists():
             import yaml
 
             with open(config_path) as f:
+                config = yaml.safe_load(f)
+            title = config.get("title", novel_id)
+            genre = config.get("genre", "xianxia")
+        elif fallback_config_path.exists():
+            import yaml
+
+            with open(fallback_config_path) as f:
                 config = yaml.safe_load(f)
             title = config.get("title", novel_id)
             genre = config.get("genre", "xianxia")
@@ -321,31 +331,28 @@ class WizardChatAgent:
             )
 
             novel_root = project_root / "data" / "novels" / novel_id
-            src_world_dir = novel_root / "src" / "world"
-            runtime_world_dir = novel_root / "data" / "world"
-            runtime_foreshadowing_dir = novel_root / "data" / "foreshadowing"
+            planning_store = StoryPlanningStore(project_root, novel_id)
+            planning_store.save_foundation_draft(
+                background=foundation.story_bible,
+                foundation=foundation.book_rules,
+            )
+            planning_store.save_outline_draft(foundation.volume_outline)
 
-            src_world_dir.mkdir(parents=True, exist_ok=True)
-            runtime_world_dir.mkdir(parents=True, exist_ok=True)
-            runtime_foreshadowing_dir.mkdir(parents=True, exist_ok=True)
+            truth_manager = TruthFilesManager(project_root, novel_id)
+            truth = truth_manager.load_truth_files()
+            truth.current_state = foundation.current_state
+            truth_manager.save_truth_files(truth)
 
-            files = {
-                src_world_dir / "story_bible.md": foundation.story_bible,
-                src_world_dir / "volume_outline.md": foundation.volume_outline,
-                src_world_dir / "book_rules.md": foundation.book_rules,
-                runtime_world_dir / "current_state.md": foundation.current_state,
-                runtime_foreshadowing_dir / "hooks_seed.md": foundation.foreshadowing_seed,
-            }
-
-            for filepath, content in files.items():
-                filepath.write_text(content, encoding="utf-8")
+            planning_store.runtime_planning_dir.mkdir(parents=True, exist_ok=True)
+            foreshadowing_draft = planning_store.runtime_planning_dir / "foreshadowing_draft.md"
+            foreshadowing_draft.write_text(foundation.foreshadowing_seed, encoding="utf-8")
 
             generated = [
-                "src/world/story_bible.md",
-                "src/world/volume_outline.md",
-                "src/world/book_rules.md",
+                "data/planning/background_draft.md",
+                "data/planning/foundation_draft.md",
+                "data/planning/outline_draft.md",
+                "data/planning/foreshadowing_draft.md",
                 "data/world/current_state.md",
-                "data/foreshadowing/hooks_seed.md",
             ]
             return (
                 "✅ AI 设定生成完成！\n"

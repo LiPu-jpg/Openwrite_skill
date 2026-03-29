@@ -17,12 +17,15 @@ import argparse
 import logging
 import os
 import json
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Callable, Optional
 from datetime import datetime
 import re
+import yaml
 
 from tools.context_schema import normalize_context_payload, normalize_truth_file_key
+from tools.shared_documents import normalize_character_document
 from tools.source_sync import (
     collect_sync_status as _shared_collect_sync_status,
     run_sync as _shared_run_sync,
@@ -230,24 +233,19 @@ def _cmd_init(args) -> int:
     project_root = Path.cwd()
 
     logger.info(f"初始化项目: {novel_id}")
-    result = init_project(project_root, novel_id, template=args.template)
+    if getattr(args, "template", "default") != "default":
+        logger.info("当前仅支持 default 模板，已按默认模板初始化。")
 
-    if result["success"]:
-        logger.info(f"项目已创建: {result['project_path']}")
-        logger.info(f"请编辑 {result['project_path'] / 'novel_config.yaml'}")
-        return 0
-    else:
-        logger.error(f"初始化失败: {result.get('error')}")
+    try:
+        init_project(project_root, novel_id)
+    except Exception as exc:
+        logger.error(f"初始化失败: {exc}")
         return 1
+    return 0
 
 
 def _cmd_write(args) -> int:
     """写章节"""
-    import asyncio
-
-    from tools.context_builder import ContextBuilder
-    from tools.truth_manager import TruthFilesManager
-
     project_root = Path.cwd()
     config = _load_config(project_root)
     if not config:
@@ -255,73 +253,64 @@ def _cmd_write(args) -> int:
         return 1
 
     novel_id = config.get("novel_id", "unknown")
+    style_id = config.get("style_id", novel_id)
     chapter = args.chapter
 
     if chapter == "next":
         chapter = _get_next_chapter(project_root, novel_id)
 
     logger.info(f"写章节: {chapter}")
+    context_packet = _assemble_context_packet(project_root, novel_id, style_id, chapter)
+    scheduler, workflow = _load_or_create_workflow(project_root, novel_id, chapter)
+    scheduler.start_stage(workflow, "context_assembly")
+    scheduler.complete_stage(
+        workflow,
+        "context_assembly",
+        message="canonical packet assembled via CLI write",
+        data={"chapter_id": chapter},
+    )
+    scheduler.start_stage(workflow, "writing")
 
-    async def do_write():
-        builder = ContextBuilder(project_root, novel_id)
-        context = builder.build_generation_context(chapter, window_size=5)
-        truth_manager = TruthFilesManager(project_root, novel_id)
-        truth = truth_manager.load_truth_files()
+    result = _exec_write_chapter(
+        project_root,
+        {
+            "chapter_id": chapter,
+            "context_packet": context_packet,
+            "guidance": "",
+            "target_words": 0,
+            "temperature": args.temperature,
+        },
+    )
 
-        ctx_dict = normalize_context_payload(
-            {
-                "target_words": context.target_words,
-                "chapter_goals": context.chapter_goals,
-                "current_state": context.current_state,
-                "foreshadowing_summary": context.foreshadowing_summary,
-                "ledger": context.ledger,
-                "relationships": truth.relationships,
-                "chapter_summaries": context.chapter_summaries,
-            },
-            include_aliases=True,
-        )
+    if not result.get("ok"):
+        scheduler.fail_stage(workflow, "writing", str(result.get("error", "write_failed")))
+        logger.error(str(result.get("error", "写章节失败")))
+        if getattr(args, "show", False):
+            print(str(context_packet.get("outline", "")).strip() or json.dumps(context_packet, ensure_ascii=False, indent=2))
+        return 1
 
-        try:
-            from tools.llm import LLMClient, LLMConfig
-            from tools.agent import WriterAgent, AgentContext
+    scheduler.complete_stage(
+        workflow,
+        "writing",
+        message="chapter written via CLI write",
+        data={"draft_path": str(result.get("draft_path", ""))},
+    )
+    _sync_book_state_after_write(
+        project_root,
+        novel_id,
+        chapter,
+        review_passed=None,
+        action_prefix="cli_write",
+    )
 
-            llm_config = LLMConfig.from_env()
-            client = LLMClient(llm_config)
-            agent_ctx = AgentContext(client, llm_config.model, str(project_root))
-
-            writer = WriterAgent(agent_ctx)
-
-            chapter_num = int(chapter.split("_")[-1]) if "_" in chapter else 1
-            result = await writer.write_chapter(
-                context=ctx_dict,
-                chapter_number=chapter_num,
-                temperature=args.temperature,
-            )
-
-            logger.info(f"章节已生成: {result.title}")
-            logger.info(f"字数: {result.word_count}")
-
-            truth_manager.create_snapshot(chapter_num - 1)
-
-            _save_chapter(project_root, novel_id, chapter, result.title, result.content)
-
-            updates = _collect_truth_updates(result.state_updates)
-            if updates:
-                truth_manager.update_truth_files(truth_manager.load_truth_files(), updates)
-                logger.info(f"真相文件已更新: {', '.join(updates.keys())}")
-            else:
-                logger.info("本章未产生可写入的真相增量")
-            return 0
-
-        except ImportError as e:
-            logger.warning(f"LLM 模块未安装或配置: {e}")
-            logger.info("提示: 设置环境变量 LLM_API_KEY, LLM_MODEL 等")
-            logger.info("上下文已构建，可通过 openwrite context --show 查看")
-            if getattr(args, "show", False):
-                print(context.to_prompt_context())
-            return 0
-
-    return asyncio.run(do_write())
+    logger.info(f"章节已生成: {result.get('title', '')}")
+    logger.info(f"字数: {result.get('word_count', 0)}")
+    truth_updates = result.get("truth_updates", {})
+    if truth_updates:
+        logger.info(f"真相文件已更新: {', '.join(truth_updates.keys())}")
+    else:
+        logger.info("本章未产生可写入的真相增量")
+    return 0
 
 
 def _cmd_sync(args) -> int:
@@ -434,9 +423,17 @@ def _cmd_multi_write(args) -> int:
             client = LLMClient(llm_config)
             agent_ctx = AgentContext(client, llm_config.model, str(project_root))
             director = MultiAgentDirector(agent_ctx, novel_id=novel_id, style_id=style_id)
+            scheduler, workflow = _load_or_create_workflow(project_root, novel_id, chapter)
 
             if args.show_packet:
                 packet = director.assemble_packet(chapter)
+                scheduler.start_stage(workflow, "context_assembly")
+                scheduler.complete_stage(
+                    workflow,
+                    "context_assembly",
+                    message="packet assembled for multi-write",
+                    data={"chapter_id": chapter},
+                )
                 packet_dir = (
                     Path(args.packet_output_dir)
                     if args.packet_output_dir
@@ -448,6 +445,16 @@ def _cmd_multi_write(args) -> int:
                 packet_path.write_text(packet.to_markdown(), encoding="utf-8")
                 logger.info(f"组装包快照: {packet_path}")
                 print(packet.to_markdown())
+            else:
+                scheduler.start_stage(workflow, "context_assembly")
+                scheduler.complete_stage(
+                    workflow,
+                    "context_assembly",
+                    message="packet assembly delegated to multi-write director",
+                    data={"chapter_id": chapter},
+                )
+
+            scheduler.start_stage(workflow, "writing")
 
             result = await director.run(
                 chapter_id=chapter,
@@ -456,19 +463,33 @@ def _cmd_multi_write(args) -> int:
             )
 
             if not result.draft:
+                scheduler.fail_stage(workflow, "writing", "未生成草稿")
                 logger.error("写作失败：未生成草稿")
                 return 1
 
-            _save_chapter(
+            draft_path = _save_chapter(
                 project_root,
                 novel_id,
                 chapter,
                 result.draft.title,
                 result.draft.content,
             )
+            scheduler.complete_stage(
+                workflow,
+                "writing",
+                message="chapter written via multi-write",
+                data={"draft_path": str(draft_path)},
+            )
             logger.info(f"章节已保存: {chapter}")
 
             if result.review:
+                scheduler.start_stage(workflow, "review")
+                scheduler.complete_stage(
+                    workflow,
+                    "review",
+                    message="chapter reviewed via multi-write",
+                    data=_workflow_review_payload(result.review),
+                )
                 logger.info(f"审查得分: {result.review.score:.0f}/100")
                 logger.info(f"审查问题数: {len(result.review.issues)}")
 
@@ -478,6 +499,13 @@ def _cmd_multi_write(args) -> int:
             if result.new_concepts:
                 logger.info(f"已新增概念文档: {', '.join(result.new_concepts)}")
 
+            _sync_book_state_after_write(
+                project_root,
+                novel_id,
+                chapter,
+                review_passed=bool(result.review.passed) if result.review else None,
+                action_prefix="cli_multi_write",
+            )
             return 0
 
         except ImportError as e:
@@ -511,32 +539,35 @@ def _cmd_review(args) -> int:
         logger.error(f"未找到章节: {chapter}")
         return 1
 
-    async def do_review():
-        try:
-            from tools.llm import LLMClient, LLMConfig
-            from tools.agent import ReviewerAgent, AgentContext
+    result = _exec_review_chapter(project_root, {"chapter_id": chapter})
+    if not result.get("ok"):
+        logger.error(str(result.get("error", "审查失败")))
+        return 1
 
-            llm_config = LLMConfig.from_env()
-            client = LLMClient(llm_config)
-            agent_ctx = AgentContext(client, llm_config.model, str(project_root))
+    logger.info(f"审查结果: {'通过' if result.get('passed') else '未通过'}")
+    logger.info(f"得分: {float(result.get('score', 0)):.0f}/100")
+    logger.info(f"问题数: {int(result.get('issues', 0))}")
 
-            reviewer = ReviewerAgent(agent_ctx)
-            result = await reviewer.review(content=content, context={})
-
-            logger.info(f"审查结果: {'通过' if result.passed else '未通过'}")
-            logger.info(f"得分: {result.score:.0f}/100")
-            logger.info(f"问题数: {len(result.issues)}")
-
-            for issue in result.issues[:10]:
-                logger.info(f"  [{issue.severity}] {issue.category}: {issue.description}")
-
-            return 0
-
-        except ImportError as e:
-            logger.warning(f"LLM 模块未安装: {e}")
-            return 1
-
-    return asyncio.run(do_review())
+    scheduler, workflow = _load_or_create_workflow(project_root, novel_id, chapter)
+    scheduler.start_stage(workflow, "review")
+    scheduler.complete_stage(
+        workflow,
+        "review",
+        message="chapter reviewed via CLI review",
+        data={
+            "passed": bool(result.get("passed", False)),
+            "errors": [],
+            "warnings": [],
+        },
+    )
+    _sync_book_state_after_write(
+        project_root,
+        novel_id,
+        chapter,
+        review_passed=bool(result.get("passed", False)),
+        action_prefix="cli_review",
+    )
+    return 0
 
 
 def _cmd_context(args) -> int:
@@ -625,11 +656,39 @@ def _cmd_style(args) -> int:
     if args.style_action == "extract":
         return _cmd_style_extract(args)
     elif args.style_action == "synthesize":
-        logger.info("合成风格")
-        return 0
+        return _cmd_style_synthesize(args)
     else:
         logger.error("请指定 style 子命令: extract, synthesize")
         return 1
+
+
+def _cmd_style_synthesize(args) -> int:
+    """合成作品风格文档。"""
+    project_root = Path.cwd()
+    config = _load_config(project_root)
+    if not config and getattr(args, "novel_id", "current") == "current":
+        logger.error("未找到 novel_config.yaml，请先运行 openwrite init")
+        return 1
+
+    novel_id = (
+        config.get("novel_id", "")
+        if getattr(args, "novel_id", "current") == "current"
+        else getattr(args, "novel_id", "")
+    )
+    if not novel_id:
+        logger.error("无法确定 novel_id")
+        return 1
+
+    style_id = config.get("style_id", novel_id) if config else novel_id
+    style_dir = project_root / "data" / "novels" / novel_id / "data" / "style"
+    style_dir.mkdir(parents=True, exist_ok=True)
+    composed_path = style_dir / "composed.md"
+    composed_path.write_text(
+        _build_synthesized_style_document(project_root, novel_id, style_id),
+        encoding="utf-8",
+    )
+    logger.info(f"合成风格文档已写入: {composed_path}")
+    return 0
 
 
 def _cmd_style_extract(args) -> int:
@@ -813,6 +872,7 @@ def _cmd_radar(args) -> int:
 
 def _cmd_status(args) -> int:
     """查看状态"""
+    from tools.agent.book_state import BookStateStore
     from tools.truth_manager import TruthFilesManager
 
     project_root = Path.cwd()
@@ -823,9 +883,21 @@ def _cmd_status(args) -> int:
         return 1
 
     novel_id = config.get("novel_id", "unknown")
+    current_arc = config.get("current_arc", "N/A")
+    current_chapter = config.get("current_chapter", "N/A")
+
+    state_store = BookStateStore(project_root, novel_id)
+    if state_store.path.exists():
+        try:
+            state = state_store.load_or_create()
+            current_arc = state.current_arc or current_arc
+            current_chapter = state.current_chapter or current_chapter
+        except Exception:
+            pass
+
     logger.info(f"项目: {novel_id}")
-    logger.info(f"当前篇: {config.get('current_arc', 'N/A')}")
-    logger.info(f"当前章: {config.get('current_chapter', 'N/A')}")
+    logger.info(f"当前篇: {current_arc}")
+    logger.info(f"当前章: {current_chapter}")
 
     truth_manager = TruthFilesManager(project_root, novel_id)
     chapter_count = len(_list_chapter_ids(project_root, novel_id))
@@ -942,6 +1014,318 @@ def build_cli_tool_executors(project_root: Path) -> dict[str, Callable[[dict], d
     }
 
 
+def _coerce_target_words(value) -> int:
+    try:
+        words = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return words if words > 0 else 0
+
+
+def _extract_doc_title(text: str, fallback: str = "角色") -> str:
+    stripped = str(text or "").strip()
+    if not stripped:
+        return fallback
+
+    for line in stripped.splitlines():
+        candidate = line.strip()
+        if not candidate:
+            continue
+        if candidate.startswith("#"):
+            return candidate.lstrip("#").strip() or fallback
+    return fallback
+
+
+def _render_packet_outline(prompt_sections: dict) -> str:
+    if not isinstance(prompt_sections, dict):
+        return ""
+
+    preferred = (
+        "大纲窗口",
+        "当前章节",
+        "戏剧位置",
+        "本章目标",
+        "上文",
+    )
+    parts = []
+    for key in preferred:
+        value = str(prompt_sections.get(key, "")).strip()
+        if value:
+            parts.append(f"## {key}\n{value}")
+    return "\n\n".join(parts).strip()
+
+
+def _normalize_packet_characters(documents) -> list[dict]:
+    characters = []
+    if isinstance(documents, dict):
+        for name, content in documents.items():
+            text = str(content or "").strip()
+            if not text:
+                continue
+            characters.append(
+                {
+                    "name": str(name or "").strip() or _extract_doc_title(text, fallback="角色"),
+                    "description": text[:1200],
+                }
+            )
+        return characters
+
+    if not isinstance(documents, list):
+        return characters
+
+    for index, item in enumerate(documents, start=1):
+        text = str(item or "").strip()
+        if not text:
+            continue
+        characters.append(
+            {
+                "name": _extract_doc_title(text, fallback=f"角色{index}"),
+                "description": text[:1200],
+            }
+        )
+    return characters
+
+
+def _packet_to_context_packet(packet) -> dict:
+    if isinstance(packet, dict):
+        context_packet = dict(packet)
+    elif is_dataclass(packet):
+        context_packet = asdict(packet)
+    else:
+        context_packet = {}
+        for key in (
+            "story_background",
+            "previous_chapter_content",
+            "style_documents",
+            "character_documents",
+            "concept_documents",
+            "prompt_sections",
+            "foundation",
+        ):
+            value = getattr(packet, key, None)
+            if value not in (None, ""):
+                context_packet[key] = value
+        if hasattr(packet, "to_markdown"):
+            context_packet["outline"] = packet.to_markdown()
+
+    concept_documents = context_packet.get("concept_documents")
+    if not isinstance(concept_documents, dict):
+        concept_documents = {}
+    else:
+        concept_documents = dict(concept_documents)
+
+    for key in ("current_state", "ledger", "relationships"):
+        value = context_packet.get(key, getattr(packet, key, ""))
+        if isinstance(value, str) and value.strip():
+            concept_documents.setdefault(key, value.strip())
+    context_packet["concept_documents"] = concept_documents
+
+    outline = str(context_packet.get("outline", "")).strip()
+    if not outline and hasattr(packet, "to_markdown"):
+        outline = str(packet.to_markdown()).strip()
+    if outline:
+        context_packet["outline"] = outline
+
+    style_documents = context_packet.get("style_documents")
+    if not isinstance(style_documents, dict):
+        context_packet["style_documents"] = {}
+
+    if "character_documents" not in context_packet:
+        context_packet["character_documents"] = {}
+
+    return context_packet
+
+
+def _build_reviewer_context_payload(context_packet: dict) -> dict:
+    if not isinstance(context_packet, dict):
+        return {}
+
+    concept_documents = context_packet.get("concept_documents", {})
+    if not isinstance(concept_documents, dict):
+        concept_documents = {}
+    style_documents = context_packet.get("style_documents", {})
+    if not isinstance(style_documents, dict):
+        style_documents = {}
+
+    character_bits: list[str] = []
+    character_documents = context_packet.get("character_documents", {})
+    if isinstance(character_documents, dict):
+        character_bits.extend(
+            str(content).strip() for content in character_documents.values() if str(content).strip()
+        )
+    elif isinstance(character_documents, list):
+        character_bits.extend(str(item).strip() for item in character_documents if str(item).strip())
+
+    outline = str(context_packet.get("outline", "")).strip() or _render_packet_outline(
+        context_packet.get("prompt_sections", {})
+    )
+    style_profile = "\n\n".join(
+        part
+        for part in [
+            str(style_documents.get("summary", "")).strip(),
+            str(style_documents.get("prompt_section", "")).strip(),
+        ]
+        if part
+    )
+
+    payload = {
+        "character_profiles": "\n\n".join(character_bits)[:4000],
+        "current_state": str(concept_documents.get("current_state", "")).strip(),
+        "relationships": str(concept_documents.get("relationships", "")).strip(),
+    }
+    if outline:
+        payload["outline"] = outline[:4000]
+    if style_profile:
+        payload["style_profile"] = style_profile[:2000]
+    previous = str(context_packet.get("previous_chapter_content", "")).strip()
+    if previous:
+        payload["recent_chapters"] = previous[:2000]
+    return {key: value for key, value in payload.items() if value}
+
+
+def _assemble_context_packet(project_root: Path, novel_id: str, style_id: str, chapter_id: str) -> dict:
+    from tools.chapter_assembler import ChapterAssemblerV2
+
+    packet = ChapterAssemblerV2(project_root=project_root, novel_id=novel_id, style_id=style_id).assemble(chapter_id)
+    return _packet_to_context_packet(packet)
+
+
+def _sync_book_state_after_write(
+    project_root: Path,
+    novel_id: str,
+    chapter_id: str,
+    *,
+    review_passed: bool | None = None,
+    action_prefix: str = "cli_write",
+) -> None:
+    from tools.agent.book_state import BookStage, BookStateStore
+
+    state_store = BookStateStore(project_root, novel_id)
+    state = state_store.load_or_create()
+    current_idx = _parse_chapter_no(state.current_chapter)
+    next_idx = _parse_chapter_no(chapter_id)
+    if next_idx >= current_idx:
+        state.current_chapter = chapter_id
+    if review_passed is None:
+        state.stage = BookStage.REVIEW_AND_REVISE
+        state.blocking_reason = "review_not_run"
+        state.last_agent_action = f"{action_prefix}_pending_review"
+    elif review_passed:
+        state.stage = BookStage.CHAPTER_PREFLIGHT
+        state.blocking_reason = ""
+        state.last_agent_action = f"{action_prefix}_review_passed"
+    else:
+        state.stage = BookStage.REVIEW_AND_REVISE
+        state.blocking_reason = "review_revision_requested"
+        state.last_agent_action = f"{action_prefix}_review_failed"
+    state_store.save(state)
+
+
+def _workflow_review_payload(review_result) -> dict:
+    issues = getattr(review_result, "issues", []) or []
+    errors: list[str] = []
+    warnings: list[str] = []
+    for issue in issues:
+        description = str(getattr(issue, "description", "") or "").strip()
+        if not description:
+            continue
+        severity = str(getattr(issue, "severity", "") or "").strip().lower()
+        if severity == "critical":
+            errors.append(description)
+        else:
+            warnings.append(description)
+    return {
+        "passed": bool(getattr(review_result, "passed", False)),
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def _load_or_create_workflow(project_root: Path, novel_id: str, chapter_id: str):
+    from tools.workflow_scheduler import WorkflowScheduler
+
+    scheduler = WorkflowScheduler(project_root, novel_id)
+    workflow = scheduler.load_or_create(chapter_id)
+    return scheduler, workflow
+
+
+def _build_writer_context_payload(
+    *,
+    context,
+    truth,
+    context_packet: dict,
+    guidance: str,
+    target_words: int,
+) -> dict:
+    payload = {
+        "target_words": target_words or getattr(context, "target_words", 0),
+        "chapter_goals": getattr(context, "chapter_goals", []),
+        "current_state": getattr(context, "current_state", ""),
+        "foreshadowing_summary": getattr(context, "foreshadowing_summary", ""),
+        "ledger": getattr(context, "ledger", ""),
+        "relationships": truth.relationships,
+    }
+
+    if context_packet:
+        prompt_sections = context_packet.get("prompt_sections", {})
+        concept_documents = context_packet.get("concept_documents", {})
+        style_documents = context_packet.get("style_documents", {})
+
+        packet_outline = str(context_packet.get("outline", "")).strip() or _render_packet_outline(prompt_sections)
+        if packet_outline:
+            payload["outline"] = packet_outline
+
+        style_parts = [
+            str(style_documents.get("summary", "")).strip(),
+            str(style_documents.get("prompt_section", "")).strip(),
+        ]
+        style_profile = "\n\n".join(part for part in style_parts if part)
+        if style_profile:
+            payload["style_profile"] = style_profile
+
+        active_characters = _normalize_packet_characters(
+            context_packet.get("character_documents", [])
+        )
+        if active_characters:
+            payload["active_characters"] = active_characters
+
+        payload["current_state"] = str(
+            concept_documents.get("current_state") or payload.get("current_state", "")
+        )
+        payload["ledger"] = str(
+            concept_documents.get("ledger") or payload.get("ledger", "")
+        )
+        payload["relationships"] = str(
+            concept_documents.get("relationships") or payload.get("relationships", "")
+        )
+        payload["foreshadowing_summary"] = str(
+            concept_documents.get("pending_hooks") or payload.get("foreshadowing_summary", "")
+        )
+        payload["recent_chapters"] = str(
+            context_packet.get("previous_chapter_content") or ""
+        )
+
+        extra_parts = []
+        story_background = str(context_packet.get("story_background", "")).strip()
+        foundation = str(context_packet.get("foundation", "")).strip()
+        world_rules = str(concept_documents.get("world_rules", "")).strip()
+
+        if story_background:
+            extra_parts.append(f"## 故事背景\n{story_background}")
+        if foundation:
+            extra_parts.append(f"## 基础设定\n{foundation}")
+        if world_rules:
+            extra_parts.append(f"## 世界规则\n{world_rules}")
+        if guidance:
+            extra_parts.append(f"## 额外要求\n{guidance}")
+        if extra_parts:
+            payload["external_context"] = "\n\n".join(extra_parts)
+    elif guidance:
+        payload["external_context"] = guidance
+
+    return normalize_context_payload(payload, include_aliases=False)
+
+
 def _exec_write_chapter(project_root: Path, args: dict) -> dict:
     """执行 write_chapter"""
     config = _load_config(project_root)
@@ -954,6 +1338,10 @@ def _exec_write_chapter(project_root: Path, args: dict) -> dict:
 
     novel_id = config.get("novel_id", "")
     chapter_id = args.get("chapter_id", "next")
+    context_packet = args.get("context_packet") if isinstance(args.get("context_packet"), dict) else {}
+    guidance = str(args.get("guidance", "") or "").strip()
+    target_words = _coerce_target_words(args.get("target_words"))
+    temperature = float(args.get("temperature", 0.7) or 0.7)
 
     builder = ContextBuilder(project_root, novel_id)
     context = builder.build_generation_context(chapter_id)
@@ -969,25 +1357,28 @@ def _exec_write_chapter(project_root: Path, args: dict) -> dict:
 
         chapter_num = int(chapter_id.split("_")[-1]) if "_" in chapter_id else 1
         writer = WriterAgent(agent_ctx)
+        writer_context = _build_writer_context_payload(
+            context=context,
+            truth=truth,
+            context_packet=context_packet,
+            guidance=guidance,
+            target_words=target_words,
+        )
 
         result = asyncio.run(
             writer.write_chapter(
-                context=normalize_context_payload(
-                    {
-                        "target_words": getattr(context, "target_words", 0),
-                        "chapter_goals": getattr(context, "chapter_goals", []),
-                        "current_state": getattr(context, "current_state", ""),
-                        "foreshadowing_summary": getattr(context, "foreshadowing_summary", ""),
-                        "ledger": getattr(context, "ledger", ""),
-                        "relationships": truth.relationships,
-                    },
-                    include_aliases=True,
-                ),
+                context=writer_context,
                 chapter_number=chapter_num,
+                temperature=temperature,
+                target_words=writer_context.get("target_words") or None,
             )
         )
 
+        truth_manager.create_snapshot(max(chapter_num - 1, 0))
         draft_path = _save_chapter(project_root, novel_id, chapter_id, result.title, result.content)
+        updates = _collect_truth_updates(getattr(result, "state_updates", {}))
+        if updates:
+            truth_manager.update_truth_files(truth_manager.load_truth_files(), updates)
 
         return {
             "ok": True,
@@ -995,6 +1386,7 @@ def _exec_write_chapter(project_root: Path, args: dict) -> dict:
             "title": result.title,
             "word_count": result.word_count,
             "draft_path": str(draft_path),
+            "truth_updates": updates,
         }
     except Exception as e:
         return {"ok": False, "chapter_id": chapter_id, "error": str(e)}
@@ -1022,16 +1414,25 @@ def _exec_review_chapter(project_root: Path, args: dict) -> dict:
         agent_ctx = AgentContext(client, llm_config.model, str(project_root))
 
         reviewer = ReviewerAgent(agent_ctx)
-        result = asyncio.run(reviewer.review(content=content, context={}))
+        review_chapter_id = (
+            chapter_id if chapter_id != "latest" else config.get("current_chapter", "ch_001")
+        )
+        style_id = config.get("style_id", novel_id)
+        review_context = _build_reviewer_context_payload(
+            _assemble_context_packet(project_root, novel_id, style_id, review_chapter_id)
+        )
+
+        result = asyncio.run(reviewer.review(content=content, context=review_context))
 
         return {
+            "ok": True,
             "chapter_id": chapter_id,
             "passed": result.passed,
             "score": result.score,
             "issues": len(result.issues),
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"ok": False, "error": str(e)}
 
 
 def _exec_get_status(project_root: Path) -> dict:
@@ -1131,6 +1532,7 @@ def _exec_create_character(project_root: Path, args: dict) -> dict:
     novel_id = config.get("novel_id", "")
     name = args.get("name", "")
     description = args.get("description", "")
+    content = args.get("content", "")
 
     char_dir = project_root / "data" / "novels" / novel_id / "src" / "characters"
     char_dir.mkdir(parents=True, exist_ok=True)
@@ -1140,9 +1542,15 @@ def _exec_create_character(project_root: Path, args: dict) -> dict:
         return {"error": "角色名无效，不能包含路径分隔符或仅由特殊字符组成"}
 
     char_file = char_dir / f"{safe_name}.md"
-    char_file.write_text(f"# {name}\n\n{description}", encoding="utf-8")
+    normalized = normalize_character_document(
+        str(content or ""),
+        fallback_id=safe_name,
+        fallback_name=name,
+        fallback_description=description,
+    )
+    char_file.write_text(normalized, encoding="utf-8")
 
-    return {"file": str(char_file), "name": name, "safe_name": safe_name}
+    return {"ok": True, "file": str(char_file), "name": name, "safe_name": safe_name}
 
 
 def _exec_get_truth_files(project_root: Path) -> dict:
@@ -1240,6 +1648,128 @@ def _collect_truth_updates(state_updates: dict) -> dict[str, str]:
             out[attr] = value
 
     return out
+
+
+def _extract_markdown_list(text: str, heading: str) -> list[str]:
+    pattern = re.compile(
+        rf"^##\s+{re.escape(heading)}\s*$\n(.*?)(?=^\s*##\s+|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        return []
+    items: list[str] = []
+    for line in match.group(1).splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("- ", "* ")):
+            items.append(stripped[2:].strip())
+    return items
+
+
+def _extract_craft_headings(project_root: Path) -> list[str]:
+    craft_dir = project_root / "craft"
+    headings: list[str] = []
+    for filename in ("dialogue_craft.md", "scene_craft.md", "rhythm_craft.md"):
+        path = craft_dir / filename
+        if not path.exists():
+            continue
+        text = _load_text_file(path)
+        headings.extend(re.findall(r"^##\s+(.+)$", text, re.MULTILINE)[:5])
+    deduped: list[str] = []
+    seen = set()
+    for heading in headings:
+        normalized = heading.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped[:12]
+
+
+def _load_reference_style_snippets(project_root: Path, style_id: str) -> dict[str, str]:
+    ref_dir = project_root / "data" / "reference_styles" / style_id
+    snippets: dict[str, str] = {}
+    if not ref_dir.exists():
+        return snippets
+    for name in ("summary", "voice", "language", "rhythm", "dialogue", "consistency"):
+        path = ref_dir / f"{name}.md"
+        if not path.exists():
+            continue
+        text = _load_text_file(path).strip()
+        if text:
+            snippets[name] = text[:1200]
+    return snippets
+
+
+def _load_banned_phrases(project_root: Path) -> list[str]:
+    humanization_path = project_root / "craft" / "humanization.yaml"
+    if not humanization_path.exists():
+        return []
+    try:
+        data = yaml.safe_load(humanization_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return []
+    phrases = data.get("banned_phrases", [])
+    result: list[str] = []
+    for item in phrases:
+        if isinstance(item, dict):
+            phrase = str(item.get("phrase", "")).strip()
+        else:
+            phrase = str(item).strip()
+        if phrase:
+            result.append(phrase)
+    return result[:20]
+
+
+def _build_synthesized_style_document(project_root: Path, novel_id: str, style_id: str) -> str:
+    style_dir = project_root / "data" / "novels" / novel_id / "data" / "style"
+    fingerprint_path = style_dir / "fingerprint.yaml"
+    try:
+        fingerprint = yaml.safe_load(fingerprint_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        fingerprint = {}
+
+    reference_snippets = _load_reference_style_snippets(project_root, style_id)
+    craft_rules = _extract_craft_headings(project_root)
+    banned_phrases = _load_banned_phrases(project_root)
+
+    parts = [
+        f"# 最终风格文档：{novel_id}",
+        "",
+        f"> 合成时间：{datetime.now().date().isoformat()}",
+        f"> 参考风格：{style_id or '无'}",
+        "> 来源：作品风格指纹 + craft/ + 参考风格摘录",
+        "",
+        "## 作品风格指纹",
+        f"- 叙述声音：{str(fingerprint.get('voice', '待定义')).strip() or '待定义'}",
+        f"- 语言风格：{str(fingerprint.get('language_style', '待定义')).strip() or '待定义'}",
+        f"- 节奏控制：{str(fingerprint.get('rhythm', '待定义')).strip() or '待定义'}",
+    ]
+
+    if reference_snippets:
+        parts.extend(["", "## 参考风格摘录"])
+        label_map = {
+            "summary": "摘要",
+            "voice": "叙述声音",
+            "language": "语言风格",
+            "rhythm": "节奏控制",
+            "dialogue": "对话风格",
+            "consistency": "一致性要求",
+        }
+        for key, label in label_map.items():
+            text = reference_snippets.get(key, "")
+            if text:
+                parts.extend(["", f"### {label}", text])
+
+    if craft_rules:
+        parts.extend(["", "## 通用技法"])
+        parts.extend(f"- {rule}" for rule in craft_rules)
+
+    if banned_phrases:
+        parts.extend(["", "## 禁用"])
+        parts.extend(f"- {phrase}" for phrase in banned_phrases)
+
+    return "\n".join(parts).strip() + "\n"
 
 
 def _collect_sync_status(project_root: Path, novel_id: str) -> dict:

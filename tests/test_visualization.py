@@ -814,6 +814,9 @@ class TestIntegration23Tools:
         print(f"     新阶段: {state.current_stage}")
 
         assert state is not None
+        cleanup_path = scheduler.workflow_dir / "wf_ch_integ_001.yaml"
+        if cleanup_path.exists():
+            cleanup_path.unlink()
         print("  ✅ advance_workflow 正常")
 
     def test_18_chunk_text(self):

@@ -15,6 +15,7 @@ from tools.agent.director import MultiAgentDirector
 from tools.agent.reviewer import ReviewResult
 from tools.agent.writer import WritingResult
 from tools.chapter_assembler import ChapterAssemblerV2, ChapterAssemblyPacket
+from tools.frontmatter import parse_toml_front_matter
 from tools.init_project import init_project
 from tools.truth_manager import TruthFilesManager
 
@@ -155,8 +156,12 @@ def test_director_run_uses_runtime_truth_files_for_writer_and_reviewer(tmp_path:
     assert captured["writer"]["current_state"] == "这是运行态 current_state。"
     assert captured["writer"]["ledger"] == "这是运行态 ledger。"
     assert captured["writer"]["relationships"] == "这是运行态 relationships。"
+    assert "particle_ledger" not in captured["writer"]
+    assert "character_matrix" not in captured["writer"]
     assert captured["writer"]["current_state"] != "静态规则"
     assert captured["reviewer"]["current_state"] == "这是运行态 current_state。"
+    assert "particle_ledger" not in captured["reviewer"]
+    assert "character_matrix" not in captured["reviewer"]
 
 
 def test_apply_state_updates_accepts_canonical_truth_keys(tmp_path: Path):
@@ -183,6 +188,37 @@ def test_apply_state_updates_accepts_canonical_truth_keys(tmp_path: Path):
     assert truth.relationships == "关系更新"
 
 
+def test_curate_new_concepts_writes_frontmatter_entity_document(tmp_path: Path):
+    init_project(tmp_path, "demo")
+    ctx = SimpleNamespace(project_root=str(tmp_path))
+    director = MultiAgentDirector(ctx, novel_id="demo")
+
+    created = director._curate_new_concepts("新概念：灵网回声", {})
+
+    entity_path = (
+        tmp_path
+        / "data"
+        / "novels"
+        / "demo"
+        / "src"
+        / "world"
+        / "entities"
+        / "灵网回声.md"
+    )
+    text = entity_path.read_text(encoding="utf-8")
+    meta, body = parse_toml_front_matter(text)
+
+    assert created == ["灵网回声"]
+    assert meta["id"] == "灵网回声"
+    assert meta["name"] == "灵网回声"
+    assert meta["type"] == "concept"
+    assert meta["detail_refs"] == ["规则", "特征", "关联"]
+    assert body.lstrip().startswith("# 灵网回声")
+    assert "## 规则" in body
+    assert "## 特征" in body
+    assert "## 关联" in body
+
+
 def test_assembler_prefers_src_outline_over_runtime_hierarchy(tmp_path: Path):
     novel_root = _bootstrap_novel(tmp_path)
     (novel_root / "src" / "outline.md").write_text(
@@ -207,3 +243,102 @@ def test_assembler_prefers_src_outline_over_runtime_hierarchy(tmp_path: Path):
     assert hierarchy.master.title == "源大纲"
     assert hierarchy.get_node("ch_001").title == "源标题"
     assert hierarchy.get_node("ch_001").content_focus == "源摘要"
+
+
+def test_assembler_uses_explicit_arc_and_section_summaries_from_outline_body(tmp_path: Path):
+    novel_root = _bootstrap_novel(tmp_path)
+    (novel_root / "src" / "outline.md").write_text(
+        (
+            "# 测试小说\n\n"
+            "## 第一篇：觉醒篇\n\n"
+            "这是篇梗概专用文本。它明确说明这一篇从主角的异常觉醒写到第一次主动修补异常，"
+            "并强调职场压力、隐藏身份和现实物证逐步收紧的整体推进。\n\n"
+            "> 篇弧线: 觉醒 → 试探 → 卷入\n"
+            "> 篇情感: 困惑 → 紧张 → 决断\n"
+            "> 起止章节: ch_001 - ch_001\n\n"
+            "### 第一节：意外觉醒\n\n"
+            "这是节梗概专用文本。它说明这一节如何从加班夜异常开始，推进到会议室失控与"
+            "主角确认自身变化，同时交代赵磊和林月分别从朋友与上司视角感受到不对劲。\n\n"
+            "> 节结构: 起(ch_001)\n"
+            "> 节情感: 困惑 → 失控 → 接受\n\n"
+            "#### 第一章：加班\n\n"
+            "> 戏剧位置: 起\n"
+            "> 内容焦点: 开篇\n"
+            "> 出场角色: chen_ming\n"
+            "> 涉及设定: company\n"
+        ),
+        encoding="utf-8",
+    )
+
+    packet = ChapterAssemblerV2(project_root=tmp_path, novel_id="demo").assemble("ch_001")
+
+    assert "篇梗概专用文本" in packet.historical_arc_summaries[0].summary
+    assert "节梗概专用文本" in packet.current_arc_sections[0].summary
+
+
+def test_outline_parser_keeps_section_summary_on_later_sections(tmp_path: Path):
+    novel_root = _bootstrap_novel(tmp_path)
+    outline_text = (
+        "# 测试小说\n\n"
+        "## 第一篇：觉醒篇\n\n"
+        "篇梗概一。\n\n"
+        "### 第一节：A\n\n"
+        "第一节梗概。\n\n"
+        "> 节结构: 起(ch_001)\n\n"
+        "#### 第一章：甲\n\n"
+        "> 内容焦点: 甲摘要\n"
+        "> 出场角色: chen_ming\n"
+        "> 涉及设定: company\n\n"
+        "### 第二节：B\n\n"
+        "第二节梗概。\n\n"
+        "> 节结构: 起(ch_002)\n\n"
+        "#### 第二章：乙\n\n"
+        "> 内容焦点: 乙摘要\n"
+        "> 出场角色: chen_ming\n"
+        "> 涉及设定: company\n"
+    )
+    (novel_root / "src" / "outline.md").write_text(outline_text, encoding="utf-8")
+
+    hierarchy = ChapterAssemblerV2(project_root=tmp_path, novel_id="demo")._load_hierarchy()
+
+    assert hierarchy.sections[0].summary == "第一节梗概。"
+    assert hierarchy.sections[1].summary == "第二节梗概。"
+
+
+def test_assembler_resolves_character_documents_by_display_name(tmp_path: Path):
+    novel_root = _bootstrap_novel(tmp_path)
+    (novel_root / "src" / "outline.md").write_text(
+        (
+            "# 测试小说\n\n"
+            "## 第一篇：觉醒篇\n\n"
+            "篇梗概。\n\n"
+            "### 第一节：意外觉醒\n\n"
+            "节梗概。\n\n"
+            "#### 第一章：加班\n\n"
+            "> 内容焦点: 开篇\n"
+            "> 出场角色: 陈明\n"
+            "> 涉及设定: 公司\n"
+        ),
+        encoding="utf-8",
+    )
+    (novel_root / "src" / "characters" / "chen_ming.md").write_text(
+        """+++
+id = "chen_ming"
+name = "陈明"
+tier = "主角"
+summary = "普通程序员觉醒术法。"
++++
+
+# 陈明
+
+## 背景
+
+普通程序员。
+""",
+        encoding="utf-8",
+    )
+
+    packet = ChapterAssemblerV2(project_root=tmp_path, novel_id="demo").assemble("ch_001")
+
+    assert "陈明" in packet.character_documents
+    assert "普通程序员觉醒术法" in packet.character_documents["陈明"]

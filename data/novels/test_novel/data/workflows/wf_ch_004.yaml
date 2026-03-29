@@ -1,0 +1,54 @@
+novel_id: test_novel
+chapter_id: ch_004
+current_stage: compression
+draft_path: /Users/jiaoziang/迁移/Openwrite/data/novels/test_novel/data/manuscript/arc_001/ch_004.md
+polished_path: ''
+review_passed: true
+review_errors: []
+review_warnings: []
+user_approved: true
+stages:
+- name: context_assembly
+  status: completed
+  started_at: '2026-03-28T10:00:00'
+  completed_at: '2026-03-28T10:20:00'
+  message: context_assembly completed
+  data: {}
+- name: writing
+  status: completed
+  started_at: '2026-03-28T11:00:00'
+  completed_at: '2026-03-28T11:20:00'
+  message: writing completed
+  data:
+    draft_path: /Users/jiaoziang/迁移/Openwrite/data/novels/test_novel/data/manuscript/arc_001/ch_004.md
+- name: review
+  status: completed
+  started_at: '2026-03-28T12:00:00'
+  completed_at: '2026-03-28T12:20:00'
+  message: review completed
+  data:
+    passed: true
+    errors: []
+    warnings: []
+- name: user_confirm
+  status: completed
+  started_at: '2026-03-28T13:00:00'
+  completed_at: '2026-03-28T13:20:00'
+  message: user_confirm completed
+  data:
+    approved: true
+- name: styling
+  status: completed
+  started_at: '2026-03-28T14:00:00'
+  completed_at: '2026-03-28T14:20:00'
+  message: styling completed
+  data: {}
+- name: compression
+  status: completed
+  started_at: '2026-03-28T15:00:00'
+  completed_at: '2026-03-28T15:20:00'
+  message: compression completed
+  data: {}
+created_at: '2026-03-28T10:00:00'
+updated_at: '2026-03-29T09:10:00'
+error: ''

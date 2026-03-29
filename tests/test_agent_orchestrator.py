@@ -125,6 +125,28 @@ def test_discovery_appends_ideation_and_stays_in_discovery(tmp_path: Path):
     assert "背景" in result.message
 
 
+def test_status_request_accepts_current_status_phrase(tmp_path: Path):
+    state_store = BookStateStore(tmp_path, "demo")
+    state = state_store.load_or_create()
+    state.stage = BookStage.CHAPTER_PREFLIGHT
+    state.current_chapter = "ch_007"
+    state_store.save(state)
+
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=StoryPlanningStore(tmp_path, "demo"),
+    )
+
+    result = orchestrator.handle_user_message("查看当前状态")
+
+    assert result.blocked is False
+    assert result.next_action == "report_status"
+    assert result.stage == BookStage.CHAPTER_PREFLIGHT
+    assert "当前章节: ch_007" in result.message
+
+
 def test_foundation_confirmation_promotes_drafts_and_advances_to_rolling_outline(
     tmp_path: Path,
 ):
@@ -381,6 +403,31 @@ def test_outline_confirmation_promotes_outline_and_advances_to_chapter_preflight
     assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
+def test_outline_confirmation_requires_outline_stage(tmp_path: Path):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.save_outline_draft("# 大纲草案")
+    state = state_store.load_or_create()
+    state.stage = BookStage.REVIEW_AND_REVISE
+    state.current_chapter = "ch_001"
+    state_store.save(state)
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+
+    result = orchestrator.handle_user_message("大纲确认好了，可以直接写")
+
+    state = state_store.load_or_create()
+    assert result.blocked is True
+    assert result.next_action == "ignore"
+    assert result.stage == BookStage.REVIEW_AND_REVISE
+    assert state.stage == BookStage.REVIEW_AND_REVISE
+    assert not planning_store.outline_src_path.exists()
+
+
 def test_ambiguous_outline_question_does_not_promote_outline(tmp_path: Path):
     state_store = BookStateStore(tmp_path, "demo")
     planning_store = StoryPlanningStore(tmp_path, "demo")
@@ -537,6 +584,30 @@ def test_natural_outline_approval_promotes_outline(tmp_path: Path):
     assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
+def test_outline_generation_request_writes_draft_and_requests_confirmation(
+    tmp_path: Path, monkeypatch
+):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    monkeypatch.setattr(orchestrator, "_generate_outline_draft", lambda text: "# 新大纲")
+
+    result = orchestrator.handle_user_message("帮我生成一份都市异能题材四级大纲")
+
+    state = state_store.load_or_create()
+    assert result.blocked is False
+    assert result.next_action == "request_outline_confirmation"
+    assert result.stage == BookStage.ROLLING_OUTLINE
+    assert state.stage == BookStage.ROLLING_OUTLINE
+    assert state.pending_confirmation == "outline_scope"
+    assert planning_store.outline_draft_path.read_text(encoding="utf-8") == "# 新大纲"
+
+
 def test_negated_foundation_confirmation_does_not_promote_foundation(tmp_path: Path):
     state_store = BookStateStore(tmp_path, "demo")
     planning_store = StoryPlanningStore(tmp_path, "demo")
@@ -586,6 +657,78 @@ def test_writing_request_after_outline_confirmation_records_current_chapter(
     assert result.next_action == "chapter_preflight"
     assert state.current_chapter == "ch_001"
     assert state.stage == BookStage.CHAPTER_PREFLIGHT
+
+
+def test_review_request_routes_to_review_executor_without_touching_ideation(tmp_path: Path):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    calls = {}
+
+    def review_chapter(args: dict) -> dict:
+        calls["chapter_id"] = args["chapter_id"]
+        return {"ok": True, "passed": True, "score": 92}
+
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+        tool_executors={"review_chapter": review_chapter},
+    )
+
+    result = orchestrator.handle_user_message("审查第六章并给出可执行修改建议")
+
+    assert result.blocked is False
+    assert result.next_action == "review_completed"
+    assert calls["chapter_id"] == "ch_006"
+    assert planning_store.ideation_path.exists() is False
+
+
+def test_character_creation_request_routes_to_executor_and_syncs(tmp_path: Path, monkeypatch):
+    root, _novel_root = _bootstrap_novel(tmp_path)
+    state_store = BookStateStore(root, "demo")
+    planning_store = StoryPlanningStore(root, "demo")
+    captured = {}
+
+    def create_character(args: dict) -> dict:
+        captured["args"] = args
+        return {"ok": True, "file": "x"}
+
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        root,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+        tool_executors={"create_character": create_character},
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_generate_character_document",
+        lambda text: """+++
+name = "苏晚"
++++
+
+# 苏晚
+
+## 背景
+
+旧友反派。
+""",
+    )
+    sync_calls = []
+    monkeypatch.setattr(
+        orchestrator,
+        "_sync_runtime_caches",
+        lambda **kwargs: sync_calls.append(kwargs),
+    )
+
+    result = orchestrator.handle_user_message("创建一个反派角色，和主角是旧友")
+
+    assert result.blocked is False
+    assert result.next_action == "character_created"
+    assert captured["args"]["name"] == "苏晚"
+    assert "旧友反派" in captured["args"]["content"]
+    assert sync_calls == [{"sync_outline": False, "sync_characters": True}]
 
 
 def test_run_preflight_reports_missing_previous_chapter_when_scope_exists(
@@ -666,7 +809,7 @@ def test_build_chapter_packet_persists_context_snapshot(tmp_path: Path):
     assert yaml.safe_load(snapshot_path.read_text(encoding="utf-8"))["chapter_id"] == "ch_001"
 
 
-def test_delegate_writing_uses_write_chapter_only(
+def test_delegate_writing_runs_review_when_executor_available(
     tmp_path: Path,
 ):
     root, novel_root = _bootstrap_novel(tmp_path)
@@ -709,10 +852,15 @@ def test_delegate_writing_uses_write_chapter_only(
 
     result = orchestrator.delegate_writing("ch_001")
 
+    loaded_state = state_store.load_or_create()
+
     assert result["ok"] is True
     assert result["chapter_id"] == "ch_001"
+    assert result["next_action"] == "ready_for_next_chapter"
     assert calls["write_chapter"] == 1
-    assert calls["review_chapter"] == 0
+    assert calls["review_chapter"] == 1
+    assert loaded_state.stage == BookStage.CHAPTER_PREFLIGHT
+    assert loaded_state.last_agent_action == "delegated_writing_review_passed"
 
 
 def test_delegate_writing_records_failure_when_executor_raises(

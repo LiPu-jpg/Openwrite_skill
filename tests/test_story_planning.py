@@ -39,6 +39,24 @@ def test_promote_foundation_writes_src_story_files(tmp_path: Path):
     assert foundation_body.strip() == "设定B"
 
 
+def test_save_foundation_draft_normalizes_runtime_drafts(tmp_path: Path):
+    store = StoryPlanningStore(tmp_path, "demo")
+
+    store.save_foundation_draft(background="背景A", foundation="设定B")
+
+    background_meta, background_body = parse_toml_front_matter(
+        store.background_draft_path.read_text(encoding="utf-8")
+    )
+    foundation_meta, foundation_body = parse_toml_front_matter(
+        store.foundation_draft_path.read_text(encoding="utf-8")
+    )
+
+    assert background_meta["id"] == "story_background"
+    assert foundation_meta["id"] == "story_foundation"
+    assert background_body.strip() == "背景A"
+    assert foundation_body.strip() == "设定B"
+
+
 def test_load_story_document_returns_metadata_and_body(tmp_path: Path):
     store = StoryPlanningStore(tmp_path, "demo")
     store.story_src_dir.mkdir(parents=True, exist_ok=True)

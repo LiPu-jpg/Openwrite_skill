@@ -1,0 +1,25 @@
+id: xu_mo
+name: 徐墨
+tier: 重要配角
+age: 34
+occupation: 产品经理
+identity: 产品经理
+brief: 说话总像在留后手的资深产品经理，擅长用需求顺序控制局面，是陈明最早接触到的“知道得比普通人多”的灰色角色。
+background: 徐墨在星辰科技待得比林月还久，是很多跨组项目真正的推动者。大多数人对他的印象停留在“需求经常变”“会卡排期”“文档写得细”，但陈明很快意识到，徐墨更像一个总能提前看见变量变化的人。他不一定会亲自下场，但很擅长递出一份足够改变局势的文件。
+personality:
+- 擅长在复杂冲突里找到最有利自己的站位
+- 说话留白多，很少把结论直接说满
+- 有极强的现实判断力，不会轻易做无意义的表态
+- 对异常不是恐惧，而是习惯性地评估其可利用价值
+relationships:
+- target: chen_ming
+  kind: observer
+  weight: 0.68
+  note: 对陈明的异常反应抱有兴趣
+- target: wang_dawei
+  kind: ally_of_convenience
+  weight: 0.44
+  note: 表面合作，真实立场不明
+appearance:
+  features: 个子不高
+  clothing: 衬衫永远干净得像刚熨过

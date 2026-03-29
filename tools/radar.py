@@ -306,7 +306,7 @@ class RadarAgent:
         user_prompt = "请基于上面的实时排行榜数据，分析当前网文市场热度，给出开书建议。"
 
         try:
-            response = await self.ctx.client.chat(
+            response = self.ctx.client.chat(
                 messages=[
                     Message("system", system_prompt),
                     Message("user", user_prompt),

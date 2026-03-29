@@ -56,6 +56,7 @@ class OutlineNode(BaseModel):
         description="本篇情感走向，如 '平静 → 紧张 → 绝望 → 重燃希望'"
     )
     arc_theme: str = Field(default="", description="本篇主题")
+    chapter_range: str = Field(default="", description="篇纲覆盖的章节范围")
 
     # ── 节纲 (SECTION) 字段 —— 中弧线 ──
     purpose: str = Field(default="", description="节目的")
@@ -139,7 +140,22 @@ class OutlineHierarchy(BaseModel):
                 break
         if not arc:
             return []
-        return [ch for ch in self.chapters if ch.node_id in arc.children_ids]
+
+        chapter_ids: List[str] = []
+        for child_id in arc.children_ids:
+            node = self.get_node(child_id)
+            if not node:
+                continue
+            if node.node_type == OutlineNodeType.CHAPTER:
+                chapter_ids.append(node.node_id)
+            elif node.node_type == OutlineNodeType.SECTION:
+                chapter_ids.extend(node.children_ids)
+
+        if not chapter_ids:
+            return []
+
+        chapter_map = {chapter.node_id: chapter for chapter in self.chapters}
+        return [chapter_map[ch_id] for ch_id in chapter_ids if ch_id in chapter_map]
 
     def get_parent_section(self, chapter_id: str) -> Optional[OutlineNode]:
         """获取章节所属的节"""

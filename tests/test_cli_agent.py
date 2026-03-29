@@ -10,14 +10,31 @@ import tools.cli as cli_module
 import tools.agent as agent_module
 import tools.context_builder as context_builder_module
 import tools.llm as llm_module
+import tools.chapter_assembler as chapter_assembler_module
 from tools.agent.book_state import BookStage, BookStateStore
 import tools.agent.orchestrator as orchestrator_module
 import tools.agent.tool_runtime as tool_runtime_module
+from tools.frontmatter import parse_toml_front_matter
 from tools.story_planning import StoryPlanningStore
+from tools.workflow_scheduler import WorkflowScheduler
 
 
 def _fake_args(instruction: str = "查看项目状态", max_turns: int = 20, quiet: bool = False):
     return SimpleNamespace(instruction=instruction, max_turns=max_turns, quiet=quiet)
+
+
+def test_cmd_init_uses_default_initializer_and_returns_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+
+    args = SimpleNamespace(novel_id="demo", template="legacy")
+
+    result = cli_module._cmd_init(args)
+
+    assert result == 0
+    assert (tmp_path / "novel_config.yaml").exists()
+    assert (tmp_path / "data" / "novels" / "demo" / "src" / "outline.md").exists()
 
 
 def test_cmd_agent_routes_through_orchestrator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -203,9 +220,16 @@ def test_run_cli_reuses_a_single_preflight_for_chapter_delegation(tmp_path: Path
     delegate_calls = {}
     real_delegate = orchestrator.delegate_writing
 
-    def spying_delegate(chapter_id: str, preflight_result=None):
+    def spying_delegate(chapter_id: str, preflight_result=None, guidance: str = "", target_words: int = 0):
         delegate_calls["preflight_result"] = preflight_result
-        return real_delegate(chapter_id, preflight_result=preflight_result)
+        delegate_calls["guidance"] = guidance
+        delegate_calls["target_words"] = target_words
+        return real_delegate(
+            chapter_id,
+            preflight_result=preflight_result,
+            guidance=guidance,
+            target_words=target_words,
+        )
 
     monkeypatch.setattr(orchestrator, "delegate_writing", spying_delegate)
 
@@ -214,6 +238,8 @@ def test_run_cli_reuses_a_single_preflight_for_chapter_delegation(tmp_path: Path
     assert result == 0
     assert preflight_calls["count"] == 1
     assert delegate_calls["preflight_result"]["chapter_id"] == "ch_001"
+    assert delegate_calls["guidance"] == ""
+    assert delegate_calls["target_words"] == 0
 
 
 def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
@@ -223,6 +249,7 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
     expected_draft_path = (
         tmp_path / "data" / "novels" / "demo" / "data" / "manuscript" / "arc_001" / "ch_001.md"
     )
+    captured = {}
 
     class FakeContext:
         target_words = 1200
@@ -242,7 +269,15 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
         def __init__(self, agent_ctx):
             self.agent_ctx = agent_ctx
 
-        async def write_chapter(self, context, chapter_number: int, temperature: float = 0.7):
+        async def write_chapter(
+            self,
+            context,
+            chapter_number: int,
+            temperature: float = 0.7,
+            target_words: int | None = None,
+        ):
+            captured["context"] = context
+            captured["target_words"] = target_words
             return SimpleNamespace(title="测试标题", content="测试内容", word_count=321)
 
     monkeypatch.setattr(context_builder_module, "ContextBuilder", FakeBuilder)
@@ -262,7 +297,36 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
         lambda *args, **kwargs: expected_draft_path,
     )
 
-    result = cli_module._exec_write_chapter(tmp_path, {"chapter_id": "ch_001"})
+    result = cli_module._exec_write_chapter(
+        tmp_path,
+        {
+            "chapter_id": "ch_001",
+            "guidance": "偏冷峻，冲突更直接",
+            "target_words": 3500,
+            "context_packet": {
+                "story_background": "背景设定",
+                "foundation": "基础设定",
+                "previous_chapter_content": "上一章正文",
+                "style_documents": {
+                    "summary": "冷峻节奏",
+                    "prompt_section": "短句推进",
+                },
+                "character_documents": ["# 主角档案\n\n冷静谨慎。"],
+                "concept_documents": {
+                    "world_rules": "规则A",
+                    "current_state": "运行态现状",
+                    "pending_hooks": "伏笔A",
+                },
+                "prompt_sections": {
+                    "大纲窗口": "- 第一章: 开篇",
+                    "当前章节": "第一章\n开篇",
+                    "戏剧位置": "▶ 本章位于: 起",
+                    "本章目标": "- 推进剧情",
+                    "上文": "上文内容",
+                },
+            },
+        },
+    )
 
     assert result == {
         "ok": True,
@@ -270,4 +334,363 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
         "title": "测试标题",
         "word_count": 321,
         "draft_path": str(expected_draft_path),
+        "truth_updates": {},
     }
+    assert captured["target_words"] == 3500
+    assert captured["context"]["target_words"] == 3500
+    assert "背景设定" in captured["context"]["external_context"]
+    assert "基础设定" in captured["context"]["external_context"]
+    assert "偏冷峻" in captured["context"]["external_context"]
+    assert captured["context"]["current_state"] == "运行态现状"
+    assert captured["context"]["foreshadowing_summary"] == "伏笔A"
+    assert captured["context"]["recent_chapters"] == "上一章正文"
+    assert captured["context"]["active_characters"][0]["name"] == "主角档案"
+    assert "第一章" in captured["context"]["outline"]
+    assert "particle_ledger" not in captured["context"]
+    assert "character_matrix" not in captured["context"]
+    assert "pending_hooks" not in captured["context"]
+
+
+def test_exec_create_character_normalizes_shared_source_document(tmp_path: Path):
+    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
+
+    result = cli_module._exec_create_character(
+        tmp_path,
+        {
+            "name": "林月",
+            "description": "高冷强势的技术组长。",
+        },
+    )
+
+    assert result["ok"] is True
+    target = tmp_path / "data" / "novels" / "demo" / "src" / "characters" / "林月.md"
+    meta, body = parse_toml_front_matter(target.read_text(encoding="utf-8"))
+    assert meta["id"] == "林月"
+    assert meta["name"] == "林月"
+    assert meta["tier"] == "普通配角"
+    assert meta["summary"] == "高冷强势的技术组长。"
+    assert meta["detail_refs"] == ["基本信息", "背景", "外貌", "性格", "关系"]
+    assert body.lstrip().startswith("# 林月")
+    assert "## 背景" in body
+
+
+def test_cmd_write_routes_through_canonical_packet_and_updates_runtime_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "novel_config.yaml").write_text(
+        "novel_id: demo\nstyle_id: demo\ncurrent_arc: arc_001\ncurrent_chapter: ch_001\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+
+    packet_dict = {
+        "story_background": "背景设定",
+        "foundation": "基础设定",
+        "previous_chapter_content": "上一章正文",
+        "style_documents": {"summary": "冷峻节奏"},
+        "character_documents": ["# 陈明\n\n冷静谨慎。"],
+        "concept_documents": {"current_state": "运行态现状"},
+        "prompt_sections": {"当前章节": "第一章"},
+    }
+
+    class FakePacket:
+        def to_markdown(self):
+            return "# packet"
+
+    for key, value in packet_dict.items():
+        setattr(FakePacket, key, value)
+
+    class FakeAssembler:
+        def __init__(self, project_root: Path, novel_id: str, style_id: str = ""):
+            self.project_root = project_root
+            self.novel_id = novel_id
+            self.style_id = style_id
+
+        def assemble(self, chapter_id: str):
+            return FakePacket()
+
+    exec_calls: list[dict] = []
+
+    def fake_exec_write_chapter(project_root: Path, args: dict) -> dict:
+        exec_calls.append(args)
+        draft_path = (
+            project_root
+            / "data"
+            / "novels"
+            / "demo"
+            / "data"
+            / "manuscript"
+            / "arc_001"
+            / "ch_001.md"
+        )
+        draft_path.parent.mkdir(parents=True, exist_ok=True)
+        draft_path.write_text("# 第一章\n\n正文", encoding="utf-8")
+        return {
+            "ok": True,
+            "chapter_id": "ch_001",
+            "title": "第一章",
+            "word_count": 1234,
+            "draft_path": str(draft_path),
+        }
+
+    class FakeContext:
+        target_words = 4000
+        chapter_goals = ["推进剧情"]
+        current_state = "现状"
+        foreshadowing_summary = "伏笔"
+        ledger = "账本"
+        relationships = "关系"
+        chapter_summaries = "摘要"
+
+    class FakeBuilder:
+        def __init__(self, project_root: Path, novel_id: str, reference_style: str | None = None):
+            self.project_root = project_root
+            self.novel_id = novel_id
+
+        def build_generation_context(self, chapter_id: str, window_size: int = 5):
+            return FakeContext()
+
+    class FakeWriter:
+        def __init__(self, agent_ctx):
+            self.agent_ctx = agent_ctx
+
+        async def write_chapter(self, context, chapter_number: int, temperature: float = 0.7):
+            return SimpleNamespace(
+                title="第一章",
+                content="正文",
+                word_count=1234,
+                state_updates={},
+            )
+
+    monkeypatch.setattr(chapter_assembler_module, "ChapterAssemblerV2", FakeAssembler)
+    monkeypatch.setattr(cli_module, "_exec_write_chapter", fake_exec_write_chapter)
+    monkeypatch.setattr(context_builder_module, "ContextBuilder", FakeBuilder)
+    monkeypatch.setattr(agent_module, "WriterAgent", FakeWriter)
+    monkeypatch.setattr(
+        agent_module,
+        "AgentContext",
+        lambda client, model, project_root: SimpleNamespace(
+            client=client, model=model, project_root=project_root
+        ),
+    )
+    monkeypatch.setattr(
+        llm_module.LLMConfig,
+        "from_env",
+        classmethod(lambda cls: SimpleNamespace(model="fake-model")),
+    )
+    monkeypatch.setattr(llm_module, "LLMClient", lambda config: object())
+
+    result = cli_module._cmd_write(SimpleNamespace(chapter="ch_001", temperature=0.6, show=False))
+
+    assert result == 0
+    assert exec_calls and exec_calls[0]["context_packet"]["story_background"] == "背景设定"
+    state = BookStateStore(tmp_path, "demo").load_or_create()
+    workflow = WorkflowScheduler(tmp_path, "demo").load_workflow("ch_001")
+    assert state.current_chapter == "ch_001"
+    assert state.stage == BookStage.REVIEW_AND_REVISE
+    assert workflow is not None
+    assert workflow.current_stage == "review"
+
+
+def test_cmd_multi_write_updates_runtime_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "novel_config.yaml").write_text(
+        "novel_id: demo\nstyle_id: demo\ncurrent_arc: arc_001\ncurrent_chapter: ch_001\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+    monkeypatch.setattr(
+        llm_module.LLMConfig,
+        "from_env",
+        classmethod(lambda cls: SimpleNamespace(model="fake-model")),
+    )
+    monkeypatch.setattr(llm_module, "LLMClient", lambda config: object())
+    monkeypatch.setattr(
+        agent_module,
+        "AgentContext",
+        lambda client, model, project_root: SimpleNamespace(
+            client=client, model=model, project_root=project_root
+        ),
+    )
+
+    class FakeDirector:
+        def __init__(self, agent_ctx, novel_id: str, style_id: str = ""):
+            self.agent_ctx = agent_ctx
+            self.novel_id = novel_id
+            self.style_id = style_id
+
+        async def run(self, chapter_id: str, temperature: float = 0.7, run_review: bool = True):
+            return SimpleNamespace(
+                draft=SimpleNamespace(title="第二章", content="正文"),
+                review=SimpleNamespace(passed=True, score=93, issues=[]),
+                applied_state_updates={"current_state": "已更新"},
+                new_concepts=[],
+            )
+
+    monkeypatch.setattr(agent_module, "MultiAgentDirector", FakeDirector)
+
+    result = cli_module._cmd_multi_write(
+        SimpleNamespace(
+            chapter="ch_002",
+            temperature=0.7,
+            no_review=False,
+            show_packet=False,
+            packet_output_dir=None,
+        )
+    )
+
+    assert result == 0
+    state = BookStateStore(tmp_path, "demo").load_or_create()
+    workflow = WorkflowScheduler(tmp_path, "demo").load_workflow("ch_002")
+    assert state.current_chapter == "ch_002"
+    assert state.stage == BookStage.CHAPTER_PREFLIGHT
+    assert workflow is not None
+    assert workflow.current_stage == "user_confirm"
+
+
+def test_exec_review_chapter_uses_packet_based_context(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "novel_config.yaml").write_text(
+        "novel_id: demo\nstyle_id: demo\ncurrent_arc: arc_001\ncurrent_chapter: ch_001\n",
+        encoding="utf-8",
+    )
+    draft_path = (
+        tmp_path / "data" / "novels" / "demo" / "data" / "manuscript" / "arc_001" / "ch_001.md"
+    )
+    draft_path.parent.mkdir(parents=True, exist_ok=True)
+    draft_path.write_text("# 第一章\n\n正文", encoding="utf-8")
+
+    class FakePacket:
+        character_documents = {"陈明": "# 陈明\n\n角色档案"}
+        current_state = "运行态"
+        relationships = "关系矩阵"
+        story_background = "故事背景"
+        style_documents = {"summary": "冷峻"}
+        concept_documents = {"world_rules": "规则A"}
+        previous_chapter_content = "上一章"
+        prompt_sections = {"当前章节": "第一章"}
+
+        def to_markdown(self):
+            return "# packet"
+
+    class FakeAssembler:
+        def __init__(self, project_root: Path, novel_id: str, style_id: str = ""):
+            self.project_root = project_root
+            self.novel_id = novel_id
+            self.style_id = style_id
+
+        def assemble(self, chapter_id: str):
+            return FakePacket()
+
+    captured: dict[str, object] = {}
+
+    class FakeReviewer:
+        def __init__(self, agent_ctx):
+            self.agent_ctx = agent_ctx
+
+        async def review(self, content: str, context: dict):
+            captured["content"] = content
+            captured["context"] = context
+            return SimpleNamespace(passed=True, score=96, issues=[])
+
+    def forbidden_builder(*args, **kwargs):
+        raise AssertionError("review should use canonical packet, not ContextBuilder fallback")
+
+    monkeypatch.setattr(chapter_assembler_module, "ChapterAssemblerV2", FakeAssembler)
+    monkeypatch.setattr(context_builder_module, "ContextBuilder", forbidden_builder)
+    monkeypatch.setattr(agent_module, "ReviewerAgent", FakeReviewer)
+    monkeypatch.setattr(
+        agent_module,
+        "AgentContext",
+        lambda client, model, project_root: SimpleNamespace(
+            client=client, model=model, project_root=project_root
+        ),
+    )
+    monkeypatch.setattr(
+        llm_module.LLMConfig,
+        "from_env",
+        classmethod(lambda cls: SimpleNamespace(model="fake-model")),
+    )
+    monkeypatch.setattr(llm_module, "LLMClient", lambda config: object())
+
+    result = cli_module._exec_review_chapter(tmp_path, {"chapter_id": "ch_001"})
+
+    assert result["ok"] is True
+    assert captured["content"] == "# 第一章\n\n正文"
+    assert "角色档案" in captured["context"]["character_profiles"]
+    assert captured["context"]["current_state"] == "运行态"
+
+
+def test_cmd_style_synthesize_writes_composed_style_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "novel_config.yaml").write_text(
+        "novel_id: demo\nstyle_id: 术师手册\ncurrent_arc: arc_001\ncurrent_chapter: ch_001\n",
+        encoding="utf-8",
+    )
+    style_dir = tmp_path / "data" / "novels" / "demo" / "data" / "style"
+    style_dir.mkdir(parents=True, exist_ok=True)
+    (style_dir / "fingerprint.yaml").write_text(
+        "voice: 冷静\nlanguage_style: 口语化\nrhythm: 张弛有度\n",
+        encoding="utf-8",
+    )
+    craft_dir = tmp_path / "craft"
+    craft_dir.mkdir(parents=True, exist_ok=True)
+    (craft_dir / "humanization.yaml").write_text(
+        "banned_phrases:\n  - phrase: 然而\n  - phrase: 不禁\n",
+        encoding="utf-8",
+    )
+    ref_dir = tmp_path / "data" / "reference_styles" / "术师手册"
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    (ref_dir / "summary.md").write_text("# 摘要\n\n参考风格摘要", encoding="utf-8")
+
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+
+    result = cli_module._cmd_style(SimpleNamespace(style_action="synthesize", novel_id="current"))
+
+    composed_path = style_dir / "composed.md"
+    assert result == 0
+    assert composed_path.exists()
+    text = composed_path.read_text(encoding="utf-8")
+    assert "冷静" in text
+    assert "口语化" in text
+    assert "然而" in text
+
+
+def test_cmd_review_does_not_rewind_book_state_for_older_chapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "novel_config.yaml").write_text(
+        "novel_id: demo\nstyle_id: demo\ncurrent_arc: arc_001\ncurrent_chapter: ch_008\n",
+        encoding="utf-8",
+    )
+    manuscript = (
+        tmp_path / "data" / "novels" / "demo" / "data" / "manuscript" / "arc_001" / "ch_006.md"
+    )
+    manuscript.parent.mkdir(parents=True, exist_ok=True)
+    manuscript.write_text("# 第六章\n\n正文", encoding="utf-8")
+
+    state_store = BookStateStore(tmp_path, "demo")
+    state = state_store.load_or_create()
+    state.current_chapter = "ch_008"
+    state.stage = BookStage.REVIEW_AND_REVISE
+    state_store.save(state)
+
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+    monkeypatch.setattr(
+        cli_module,
+        "_exec_review_chapter",
+        lambda project_root, args: {
+            "ok": True,
+            "chapter_id": "ch_006",
+            "passed": True,
+            "score": 98,
+            "issues": 0,
+        },
+    )
+
+    assert cli_module._cmd_review(SimpleNamespace(chapter="ch_006", strict=False)) == 0
+    reloaded = state_store.load_or_create()
+    assert reloaded.current_chapter == "ch_008"

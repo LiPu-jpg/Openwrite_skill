@@ -36,7 +36,8 @@ def test_build_tool_executors_uses_public_cli_factory(monkeypatch, tmp_path: Pat
 def test_orchestrator_toolkit_excludes_write_tools():
     assert "get_status" in ORCHESTRATOR_TOOLKIT
     assert "write_chapter" not in ORCHESTRATOR_TOOLKIT
-    assert "review_chapter" not in ORCHESTRATOR_TOOLKIT
+    assert "review_chapter" in ORCHESTRATOR_TOOLKIT
+    assert "create_character" in ORCHESTRATOR_TOOLKIT
 
 
 def test_writing_toolkit_stays_small():

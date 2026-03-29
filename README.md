@@ -225,18 +225,19 @@ note = "最信任的同事"
 
 ## 写作链路是怎么跑的
 
-1. 上下文组装：大纲窗口、角色、世界规则、伏笔、风格、近期文本。
-2. 章节生成：按戏剧位置生成正文。
-3. 章节审查：质量、逻辑、AI 痕迹检查。
-4. 状态结算：更新 `current_state.md`、`ledger.md`、`relationships.md`。
-5. 下一章继续：上下文自然承接，不丢设定。
+1. canonical packet 组装：从 `src/outline.md`、`src/story/*.md`、`src/characters/*.md`、`src/world/**/*.md` 和运行态真相文件拼出统一上下文。
+2. 章节生成：`write` 和 `multi-write` 都基于同一套 packet 写章，不再是两套不同上下文。
+3. 章节审查：`review` 与 `multi-write reviewer` 共享同一类 packet 语义，不再空上下文审查。
+4. 状态结算：更新 `current_state.md`、`ledger.md`、`relationships.md`，并同步 `book_state.yaml` 与 `wf_ch_*.yaml`。
+5. 下一章继续：主编排和直接 CLI 都读同一套运行态，不需要手工对齐章节进度。
 
 ## Agent 结构
 
-- `openwrite agent`：主编排入口，负责立项聊天、阶段判断、上下文预检、调度写作与审查。
-- `openwrite write`：单写作链路，直接走 `ContextBuilder -> WriterAgent -> TruthFilesManager`。
-- `openwrite multi-write`：多子代理写作链路，由 director 编排 writer / reviewer 等角色。
-- `openwrite review`：独立审查入口，适合对已有章节做复检。
+- `openwrite agent`：主编排入口，负责立项聊天、阶段判断、preflight、调度写作与审查。
+- `openwrite write`：direct CLI 写作入口，但现在也会先组 canonical packet，并推进 workflow 与 book state。
+- `openwrite multi-write`：受限子流程，director 编排 writer / reviewer / state settle；运行态推进和 direct write 保持一致。
+- `openwrite review`：独立审查入口，但现在也复用 canonical packet，不再只看裸正文。
+- `openwrite style synthesize`：把作品指纹、craft 规则与参考风格摘录写入 `data/style/composed.md`。
 
 ## 真相文件命名
 
@@ -257,6 +258,9 @@ openwrite doctor
 # 编辑过 src 后先同步
 openwrite sync --check
 openwrite sync
+
+# 风格指纹改动后可重建作品风格文档
+openwrite style synthesize
 
 # 生成 + 审查
 openwrite write next
@@ -309,8 +313,18 @@ data/novels/{novel_id}/data/world/
 - `openwrite agent "写第六章，重点写冲突升级，字数 3500"`
 - `openwrite agent "审查第六章并给出可执行修改建议"`
 
+## 标准样例
+
+标准样例项目在 `data/novels/test_novel/`。它包含：
+
+- 确认版 `src/` 真源
+- 长篇骨架草案 `data/planning/`
+- 运行态真相文件 `data/world/`
+- 已写章节 `data/manuscript/`
+- canonical workflow `data/workflows/wf_ch_*.yaml`
+
+如果你想快速看当前结构是否完整，可以直接读 `tests/test_standard_test_novel_fixture.py`。
+
 ## 版本
 
 当前版本：`5.4.0`
-
-如果你想看更细的人工测试手册，可查看 `docs/MANUAL_TEST_PLAYBOOK.md`。

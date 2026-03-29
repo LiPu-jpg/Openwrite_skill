@@ -1,51 +1,54 @@
 novel_id: test_novel
 chapter_id: ch_001
-current_stage: review
-draft_path: /Users/jiaoziang/迁移/Openwrite/.worktrees/openwrite-agent-orchestrator/data/novels/test_novel/data/manuscript/arc_001/ch_001.md
+current_stage: compression
+draft_path: /Users/jiaoziang/迁移/Openwrite/data/novels/test_novel/data/manuscript/arc_001/ch_001.md
 polished_path: ''
 review_passed: true
 review_errors: []
 review_warnings: []
-user_approved: null
+user_approved: true
 stages:
 - name: context_assembly
   status: completed
-  started_at: '2026-03-29T00:01:10.712261'
-  completed_at: '2026-03-29T00:01:10.713139'
-  message: chapter packet assembled
-  data:
-    chapter_id: ch_001
+  started_at: '2026-03-28T10:00:00'
+  completed_at: '2026-03-28T10:20:00'
+  message: context_assembly completed
+  data: {}
 - name: writing
   status: completed
-  started_at: '2026-03-29T00:01:10.713901'
-  completed_at: '2026-03-29T00:05:30.920021'
-  message: chapter written
+  started_at: '2026-03-28T11:00:00'
+  completed_at: '2026-03-28T11:20:00'
+  message: writing completed
   data:
-    draft_path: /Users/jiaoziang/迁移/Openwrite/.worktrees/openwrite-agent-orchestrator/data/novels/test_novel/data/manuscript/arc_001/ch_001.md
+    draft_path: /Users/jiaoziang/迁移/Openwrite/data/novels/test_novel/data/manuscript/arc_001/ch_001.md
 - name: review
-  status: pending
-  started_at: ''
-  completed_at: ''
-  message: ''
-  data: {}
+  status: completed
+  started_at: '2026-03-28T12:00:00'
+  completed_at: '2026-03-28T12:20:00'
+  message: review completed
+  data:
+    passed: true
+    errors: []
+    warnings: []
 - name: user_confirm
-  status: pending
-  started_at: ''
-  completed_at: ''
-  message: ''
-  data: {}
+  status: completed
+  started_at: '2026-03-28T13:00:00'
+  completed_at: '2026-03-28T13:20:00'
+  message: user_confirm completed
+  data:
+    approved: true
 - name: styling
-  status: pending
-  started_at: ''
-  completed_at: ''
-  message: ''
+  status: completed
+  started_at: '2026-03-28T14:00:00'
+  completed_at: '2026-03-28T14:20:00'
+  message: styling completed
   data: {}
 - name: compression
-  status: pending
-  started_at: ''
-  completed_at: ''
-  message: ''
+  status: completed
+  started_at: '2026-03-28T15:00:00'
+  completed_at: '2026-03-28T15:20:00'
+  message: compression completed
   data: {}
-created_at: '2026-03-28T22:10:51.367780'
-updated_at: '2026-03-29T00:05:30.920083'
-error: 'writing: write_chapter_failed'
+created_at: '2026-03-28T10:00:00'
+updated_at: '2026-03-29T09:10:00'
+error: ''

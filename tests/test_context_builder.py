@@ -112,6 +112,16 @@ class TestFileLoading:
     def test_load_text_nonexistent(self, builder):
         assert builder._load_text(Path("/nonexistent/file.txt")) == ""
 
+    def test_repo_humanization_yaml_is_parseable(self):
+        repo_root = Path(__file__).parent.parent
+        yaml_path = repo_root / "craft" / "humanization.yaml"
+        builder = ContextBuilder(project_root=repo_root, novel_id="test_novel")
+
+        result = builder._load_yaml(yaml_path)
+
+        assert isinstance(result, dict)
+        assert "banned_phrases" in result
+
 
 # ── Markdown helper methods ──────────────────────────────────
 
@@ -221,6 +231,44 @@ note = "最信任的同事"
         assert "标签: 都市、异能" in context_text
         assert "细节索引: background、appearance、personality" in context_text
         assert "关联: zhao_lei（最信任的同事）" in context_text
+
+    def test_get_active_characters_resolves_display_name_to_shared_source(self, builder, project_dir):
+        root, novel_id = project_dir
+        profile_path = root / "data" / "novels" / novel_id / "src" / "characters" / "chen_ming.md"
+        profile_path.write_text(
+            """+++
+id = "chen_ming"
+name = "陈明"
+tier = "主角"
+summary = "普通程序员觉醒术法后被迫在两个世界夹缝求生。"
++++
+
+# 陈明
+
+## 背景
+
+普通程序员，偶然觉醒术法。
+""",
+            encoding="utf-8",
+        )
+
+        hierarchy = OutlineHierarchy(
+            novel_id=novel_id,
+            chapters=[
+                OutlineNode(
+                    node_id="ch_001",
+                    node_type=OutlineNodeType.CHAPTER,
+                    title="第一章",
+                    involved_characters=["陈明"],
+                )
+            ],
+        )
+
+        profiles = builder._get_active_characters("ch_001", hierarchy)
+
+        assert len(profiles) == 1
+        assert profiles[0].character_id == "chen_ming"
+        assert profiles[0].name == "陈明"
 
 
 # ── Chapter index parsing ────────────────────────────────────

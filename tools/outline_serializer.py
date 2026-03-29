@@ -160,11 +160,15 @@ class OutlineMdSerializer:
             metadata.append(f"> 篇情感: {node.arc_emotional_arc}")
 
         # 起止章节
-        chapters = hierarchy.get_chapters_by_arc(node.node_id)
-        if chapters:
-            first_ch = chapters[0].node_id
-            last_ch = chapters[-1].node_id
-            metadata.append(f"> 起止章节: {first_ch} - {last_ch}")
+        chapter_range = node.chapter_range
+        if not chapter_range:
+            chapters = hierarchy.get_chapters_by_arc(node.node_id)
+            if chapters:
+                first_ch = chapters[0].node_id
+                last_ch = chapters[-1].node_id
+                chapter_range = f"{first_ch} - {last_ch}"
+        if chapter_range:
+            metadata.append(f"> 起止章节: {chapter_range}")
 
         if metadata:
             lines.extend(metadata)

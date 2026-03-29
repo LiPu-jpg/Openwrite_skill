@@ -13,13 +13,15 @@ class DataQueries:
     def __init__(self, project_root: Path, novel_id: str):
         self.project_root = project_root.resolve()
         self.novel_id = novel_id
-        self.data_dir = project_root / "data" / "novels" / novel_id
+        self.novel_root = self.project_root / "data" / "novels" / novel_id
+        self.src_dir = self.novel_root / "src"
+        self.runtime_dir = self.novel_root / "data"
 
     def query_outline(
         self, chapter_id: Optional[str] = None, arc_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """查询大纲"""
-        outline_path = self.data_dir / "outline" / "hierarchy.yaml"
+        outline_path = self.runtime_dir / "hierarchy.yaml"
         if not outline_path.exists():
             return {"success": False, "error": "Outline not found"}
 
@@ -29,7 +31,7 @@ class DataQueries:
         if chapter_id:
             # Find specific chapter
             for chapter in hierarchy.get("chapters", []):
-                if chapter.get("node_id") == chapter_id:
+                if chapter.get("id") == chapter_id:
                     return {"success": True, "result": chapter}
             return {"success": False, "error": f"Chapter not found: {chapter_id}"}
 
@@ -39,7 +41,7 @@ class DataQueries:
         self, character_id: Optional[str] = None, tier: Optional[str] = None
     ) -> Dict[str, Any]:
         """查询角色"""
-        cards_dir = self.data_dir / "characters" / "cards"
+        cards_dir = self.runtime_dir / "characters" / "cards"
         if not cards_dir.exists():
             return {"success": False, "error": "Characters directory not found"}
 
@@ -50,7 +52,8 @@ class DataQueries:
                 if card:
                     if tier and card.get("tier") != tier:
                         continue
-                    if character_id and card.get("character_id") != character_id:
+                    card_id = card.get("id") or card.get("character_id")
+                    if character_id and card_id != character_id:
                         continue
                     characters.append(card)
 
@@ -87,7 +90,7 @@ class DataQueries:
         self, node_id: Optional[str] = None, status: Optional[str] = None
     ) -> Dict[str, Any]:
         """查询伏笔"""
-        dag_path = self.data_dir / "foreshadowing" / "dag.yaml"
+        dag_path = self.runtime_dir / "foreshadowing" / "dag.yaml"
         if not dag_path.exists():
             return {"success": False, "error": "Foreshadowing DAG not found"}
 
@@ -109,7 +112,7 @@ class DataQueries:
 
     def query_manuscript(self, chapter_id: Optional[str] = None) -> Dict[str, Any]:
         """查询草稿"""
-        manuscript_dir = self.data_dir / "manuscript"
+        manuscript_dir = self.runtime_dir / "manuscript"
         if not manuscript_dir.exists():
             return {"success": False, "error": "Manuscript directory not found"}
 
@@ -132,7 +135,7 @@ class DataQueries:
 
     def query_style(self) -> Dict[str, Any]:
         """查询风格档案"""
-        style_path = self.data_dir / "style" / "fingerprint.yaml"
+        style_path = self.runtime_dir / "style" / "fingerprint.yaml"
         if not style_path.exists():
             return {"success": False, "error": "Style fingerprint not found"}
 

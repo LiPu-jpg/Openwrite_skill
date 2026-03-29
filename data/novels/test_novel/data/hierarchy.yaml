@@ -1,11 +1,16 @@
 story_info:
   title: 公司里的术师
   theme: 职场与修炼的荒诞平衡
-  word_count_estimate: 25000
-  world_premise: 现代都市，术师隐藏在普通人中
+  world_premise: 现代都市里潜伏着只能被少数人察觉的异常
 arcs:
 - id: arc_001
-  title: 第一篇：觉醒篇
+  title: 第一篇：觉醒与自保
+  sections:
+  - sec_001
+  - sec_002
+  - sec_003
+  - sec_004
+  - sec_005
   chapters:
   - ch_001
   - ch_002
@@ -14,12 +19,6 @@ arcs:
   - ch_005
   - ch_006
   - ch_007
-  arc_structure: 铺垫(sec01) → 发展(sec02) → 收束(sec03)
-  arc_emotional_arc: 日常 → 震惊 → 接受
-  description: ch_001 - ch_007
-- id: arc_002
-  title: 第二篇：暗流篇
-  chapters:
   - ch_008
   - ch_009
   - ch_010
@@ -27,9 +26,23 @@ arcs:
   - ch_012
   - ch_013
   - ch_014
-  arc_structure: 发展(sec01) → 深化(sec02)
-  arc_emotional_arc: 适应 → 自信 → 危机感
-  description: ch_008 - ch_014
+  - ch_015
+  - ch_016
+  - ch_017
+  - ch_018
+  - ch_019
+  - ch_020
+  - ch_021
+  - ch_022
+  - ch_023
+  - ch_024
+  summary: '这一篇是整本书最重要的起势阶段，重点不是一下子把世界真相掀开，而是把“一个普通程序员为什么会被异常硬生生拖进另一个世界”这件事写扎实。陈明最开始面对的不是宏大使命，而是非常具体的现实问题：线上
+    Bug 追不完、评审会躲不过、加班已经快把人榨干，而觉醒能力恰好发生在这种高压、疲惫、注意力被拉满的时刻。能力带来的第一层变化是效率和感知的异常提升，这会让他短暂受益，却也会快速制造不合常理的痕迹，让赵磊和林月这样最贴近他日常的人先一步察觉到不对劲。
+
+    这一篇的核心推进，是陈明从“把异常当成幻觉”一步步走到“我必须主动建立自己的处理方法”。前半通过茶水间、会议室、出租屋、线上事故这些非常生活化的场景，让能力和职场节奏牢牢绑在一起；中段开始把风险从个人失控推向系统留痕，机房、旧值班单、异常日志、内部审计等线索会逐步出现，逼着陈明认识到问题并不只在自己身上；后半再通过团建事故和局部协作，完成他第一次真正意义上的主动介入。到这一篇收束时，主角已经不再只是个被异常追着跑的社畜，而是拿到了通往长线主线的旧档案，也终于明白自己所在的公司很可能本身就是异常的一部分。'
+  arc_structure: 觉醒 → 隐瞒 → 试探 → 卷入 → 被迫主动
+  arc_emotional_arc: 疲惫 → 困惑 → 紧张 → 荒诞 → 危险
+  description: ch_001 - ch_024
 sections:
 - id: sec_001
   title: 第一节：意外觉醒
@@ -39,9 +52,11 @@ sections:
   - ch_002
   - ch_003
   - ch_004
-  section_structure: 起(ch01) → 承(ch02) → 转(ch03) → 合(ch04)
-  section_emotional_arc: 无聊 → 困惑 → 震惊 → 接受
-  section_tension: low → rising → peak → falling
+  summary: '这一节负责把整本书的起点落到最具现实感的状态里。陈明不是在什么神秘遗迹、也不是在生死大战中觉醒，而是在一场极其常见的深夜加班里，被祖传代码、蓝屏和过劳推到了极限。第一章要先把他的工作状态、社畜心态、赵磊的相处方式和公司氛围立起来，让读者先相信这是一个真实得让人想叹气的互联网现场。接着第二章、第三章再把异常一点点抬高，从“是不是睡懵了”推进到“它已经开始影响现实设备和公共场景”，让能力从私人幻觉变成无法回避的事实。
+
+    这一节的后半重点不是炫能力，而是建立主角的处理方式。第四章里陈明不会立刻变成高手，他只会很程序员地给这件事建模，把恐慌压进表格、流程图和复现实验里。也正因为如此，这一节的价值不只是“他觉醒了”，而是“他决定用自己的思维方式面对觉醒”。赵磊和林月在这一节里也分别完成第一次站位：前者是最早靠近日常异常的人，后者是最先从管理和现实秩序角度注意到陈明变化的人。'
+  section_structure: 起(ch_001) → 承(ch_002) → 转(ch_003) → 合(ch_004)
+  section_emotional_arc: 日常 → 困惑 → 失控 → 接受
 - id: sec_002
   title: 第二节：隐藏身份
   arc_id: arc_001
@@ -49,159 +64,378 @@ sections:
   - ch_005
   - ch_006
   - ch_007
-  section_structure: 起(ch05) → 承(ch06) → 合(ch07)
-  section_emotional_arc: 谨慎 → 紧张 → 释然
-  section_tension: medium → peak → resolving
-- id: sec_003
-  title: 第一节：平衡之道
-  arc_id: arc_002
-  chapters:
   - ch_008
+  summary: '这一节要把“觉醒之后的兴奋感”迅速压回现实。陈明很快发现，能力最大的诱惑并不是打架，而是它真的可以让工作更顺、让修 Bug 更快、让自己在一堆烂流程里短暂拥有一点掌控感。第五章和第六章的重点，都在于这种诱惑的代价开始显形：效率飙升会让熟人觉得不对，线上事故里借力解决问题则会留下可追踪的异常物证。也就是说，能力第一次进入生产环境之后，就不再只是个人秘密，而是会真实改变别人对他的判断。
+
+    这一节还承担“长期风险模型”的建立。第七章表面上是陈明开始把修炼纳入生活节奏，实质上是在告诉读者：这条线以后不会和日常生活分开，而是会深深嵌进通勤、值班、午休、绩效和加班之中。第八章则把赵磊正式推上观察者位置，他不会立刻看破真相，但会开始按照普通人的逻辑拼接异常碎片。这样一来，主角的隐藏身份就不再只是“别让陌生人发现”，而是“别让最熟悉你的人先一步意识到你已经变了”。'
+  section_structure: 起(ch_005) → 承(ch_006) → 转(ch_007) → 合(ch_008)
+  section_emotional_arc: 谨慎 → 紧张 → 荒诞 → 暗涌
+- id: sec_003
+  title: 第三节：异常日志
+  arc_id: arc_001
+  chapters:
   - ch_009
   - ch_010
   - ch_011
-  section_structure: 起(ch08) → 承(ch09) → 转(ch10) → 合(ch11)
-  section_emotional_arc: 小心 → 自信 → 危机 → 紧张
-  section_tension: low → rising → peak → high
-- id: sec_004
-  title: 第二节：真相浮现
-  arc_id: arc_002
-  chapters:
   - ch_012
   - ch_013
+  summary: '这一节负责把冲突从“陈明个人出了问题”推向“公司系统本身也有问题”。前两节里能力的痕迹还可以解释成状态起伏和偶发事故，但从第九章开始，日志、机房和值班记录这些客观材料进入叙事，意味着异常已经开始在制度和记录层留下可被反复追查的痕迹。林月的复盘、陈明看到的机房噪声、那张不该存在的
+    B3 值班单，会把原本松散的异常感统一收束成一条真正的暗线：公司底层可能一直埋着某种更旧、更大、更系统化的问题。
+
+    这一节也是主角从“观察异常”走向“第一次正式处理异常”的转折段。第十二章的小补丁不是大胜利，而是一次非常克制但意义重大的跨线行为，它证明陈明可以靠自己的理解暂时修补局部问题，也同时证明他以后会越来越难退回到单纯旁观者位置。第十三章林月的试探则负责把节奏重新拉回现实压力：即使机房和日志都很可怕，眼下最先落在他头上的，仍然是上司那句不动声色的追问。'
+  section_structure: 起(ch_009) → 承(ch_010) → 转(ch_011) → 合(ch_012) → 余波(ch_013)
+  section_emotional_arc: 试探 → 压迫 → 诡异 → 修补 → 沉默
+- id: sec_004
+  title: 第四节：职场暗流
+  arc_id: arc_001
+  chapters:
   - ch_014
-  section_structure: 起(ch12) → 承(ch13) → 转(ch14)
-  section_emotional_arc: 紧张 → 恐惧 → 决断
-  section_tension: high → peak → resolving
+  - ch_015
+  - ch_016
+  - ch_017
+  - ch_018
+  summary: '这一节要把“异常问题”正式和“组织问题”绑死。前面三节里，风险更多来自能力失控和物证外泄；从这里开始，王大伟、内部审计、徐墨和需求文档把公司政治层面的压力拉进来，陈明不再只是想办法藏住自己，而是必须面对不同人如何利用、压制或试探这条异常线。第十四章到第十六章的重点，是让读者明确看到：在职场里，超自然不一定直接表现为怪物，它也可能表现为流程、文档、会议和一份看起来完全合理的要求。
+
+    这一节同时承担“灰色角色入场”的功能。徐墨不是直接讲真相的人，他更像那个会递来一把钥匙、但不告诉你门后是什么的人。第十七章和第十八章要把陈明推到一个很现实的位置：保持中立越来越难，什么都不选本身也会变成被选择。到了这一节结束，主角还没有彻底站边，但已经失去了继续当透明打工人的可能性。'
+  section_structure: 起(ch_014) → 承(ch_015) → 转(ch_016) → 合(ch_017) → 余震(ch_018)
+  section_emotional_arc: 受压 → 试探 → 接触暗面 → 被迫表态 → 保留后手
+- id: sec_005
+  title: 第五节：城市裂缝
+  arc_id: arc_001
+  chapters:
+  - ch_019
+  - ch_020
+  - ch_021
+  - ch_022
+  - ch_023
+  - ch_024
+  summary: '这一节是第一篇的阶段高潮，要把异常从办公室内部推到更开阔、也更危险的空间里。团建是个很好的壳：它足够日常，足够合理，又天然具备“人被一起带走、脱离熟悉环境、发生事故后难以统一证词”的结构优势。第十九章到第二十一章主要负责把危机升起来，让读者明确感到这次已经不是修几个日志、熬几个夜就能糊过去的事情，普通人视角也会第一次被强行撕开口子。
+
+    第二十二章到第二十四章则要完成三个结果。第一，陈明第一次把自己的能力真正用于协作，而不是只服务于个人自救；第二，赵磊和林月都在事故后保留了无法完全回避的异常印象，主角的人际关系将从此进入新阶段；第三，这场团建不会只是一段惊险插曲，它会把旧档案、城市节点和长线主线正式推到台前。也就是说，这一节的意义不是简单“大家逃出来了”，而是第一篇结束时，陈明终于站到了必须主动追查真相的位置上。'
+  section_structure: 起(ch_019) → 承(ch_020) → 转(ch_021) → 爆发(ch_022) → 收束(ch_023) →
+    余波(ch_024)
+  section_emotional_arc: 出发前的不安 → 失序 → 封闭危机 → 强行协作 → 暂时活下来 → 事故复盘
 chapters:
 - id: ch_001
   title: 第一章：加班
+  section_id: sec_001
+  summary: '---'
   dramatic_position: 起
-  summary: 程序员陈明在深夜加班赶项目，电脑蓝屏后烦躁拍键盘，指尖闪过淡蓝色光电脑自动恢复，手腕内侧浮现若隐若现的符文印记。
-  content_focus: 程序员陈明在深夜加班赶项目，电脑蓝屏后烦躁拍键盘，指尖闪过淡蓝色光电脑自动恢复，手腕内侧浮现若隐若现的符文印记。
+  content_focus: 程序员陈明在深夜加班追查祖传 Bug，电脑蓝屏后又自行恢复，手腕内侧浮现淡蓝色符文，他以为只是困到眼花。
   word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
+  - 陈明
+  - 赵磊
+  involved_settings:
+  - company
+  - wrist_rune
 - id: ch_002
   title: 第二章：精力充沛的早晨
+  section_id: sec_001
+  summary: '---'
   dramatic_position: 承
-  summary: 第二天陈明精神状态异常好，连续熬夜却毫无疲态。同事赵磊调侃他是不是偷偷吃了什么保健品。午休时陈明去茶水间倒咖啡，马克杯脱手的瞬间在空中悬浮了一秒才落下，赵磊恰好没看到。陈明开始觉得不对劲。
-  content_focus: 第二天陈明精神状态异常好，连续熬夜却毫无疲态。同事赵磊调侃他是不是偷偷吃了什么保健品。午休时陈明去茶水间倒咖啡，马克杯脱手的瞬间在空中悬浮了一秒才落下，赵磊恰好没看到。陈明开始觉得不对劲。
-  word_count: 3500
+  content_focus: 熬夜后反而异常清醒的陈明在茶水间险些暴露能力，赵磊用闲聊试探，林月第一次留意到他的状态变化。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
-  - lin_yue
+  - 陈明
+  - 赵磊
+  - 林月
+  involved_settings:
+  - company
+  - shufa_system
 - id: ch_003
   title: 第三章：会议室事故
+  section_id: sec_001
+  summary: '---'
   dramatic_position: 转
-  summary: 组长林月召开项目评审会议，陈明因为紧张导致能力失控——投影仪爆火花、白板笔乱飞。混乱中陈明注意到手腕符文剧烈发光，他终于确认那不是幻觉。会后他躲进厕所检查符文，内心从震惊转为恐慌。
-  content_focus: 组长林月召开项目评审会议，陈明因为紧张导致能力失控——投影仪爆火花、白板笔乱飞。混乱中陈明注意到手腕符文剧烈发光，他终于确认那不是幻觉。会后他躲进厕所检查符文，内心从震惊转为恐慌。
-  word_count: 3500
+  content_focus: 项目评审会上陈明因紧张导致能力失控，投影仪爆火花、白板笔乱飞，他终于确认符文和异常并非幻觉。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - lin_yue
-  - zhao_lei
+  - 陈明
+  - 林月
+  - 赵磊
+  involved_settings:
+  - wrist_rune
+  - shufa_system
 - id: ch_004
   title: 第四章：程序员的逻辑
+  section_id: sec_001
+  summary: '---'
   dramatic_position: 合
-  summary: 陈明用程序员的思维方式分析能力规律——记录触发条件、建立电子表格、尝试复现。他发现能力与情绪波动和「逻辑链思维」有关：越是像写代码一样清晰构建步骤，能力就越可控。他在出租屋成功用意念把可乐罐悬浮了十秒，既兴奋又害怕，决定先隐瞒这件事。
-  content_focus: 陈明用程序员的思维方式分析能力规律——记录触发条件、建立电子表格、尝试复现。他发现能力与情绪波动和「逻辑链思维」有关：越是像写代码一样清晰构建步骤，能力就越可控。他在出租屋成功用意念把可乐罐悬浮了十秒，既兴奋又害怕，决定先隐瞒这件事。
-  word_count: 3500
+  content_focus: 陈明回到出租屋，用流程图和表格给能力建模，第一次把“修炼”理解成可调试的逻辑系统。
+  word_count: 4000
   involved_characters:
-  - chen_ming
+  - 陈明
+  involved_settings:
+  - shufa_system
+  - modern_magic_balance
 - id: ch_005
   title: 第五章：术法修Bug
+  section_id: sec_002
+  summary: '---'
   dramatic_position: 起
-  summary: 陈明开始偷偷利用术法能力辅助工作——用微弱感知力追踪代码逻辑，用念力在脑中同时运行多个调试线程。效率暴增但必须演得不那么明显。赵磊注意到陈明最近修bug快得离谱，在工位后偷偷观察，差点撞见陈明对着屏幕比划手势。
-  content_focus: 陈明开始偷偷利用术法能力辅助工作——用微弱感知力追踪代码逻辑，用念力在脑中同时运行多个调试线程。效率暴增但必须演得不那么明显。赵磊注意到陈明最近修bug快得离谱，在工位后偷偷观察，差点撞见陈明对着屏幕比划手势。
-  word_count: 3500
+  content_focus: 陈明开始低强度地把能力用于工作，效率飙升却必须装得像普通加班人，赵磊从工位细节里闻到了不对劲。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
+  - 陈明
+  - 赵磊
+  involved_settings:
+  - modern_magic_balance
+  - shufa_system
 - id: ch_006
   title: 第六章：线上事故
+  section_id: sec_002
+  summary: '---'
   dramatic_position: 承
-  summary: 周五深夜服务器严重故障，全组被叫回来救火。常规排查两小时无进展，林月急得拍桌子。陈明在卫生间偷偷用术法感知数据流，精准定位到故障节点。他编了个理由说是「直觉」，虽然救了火，但监控日志里留下无法解释的异常波动。
-  content_focus: 周五深夜服务器严重故障，全组被叫回来救火。常规排查两小时无进展，林月急得拍桌子。陈明在卫生间偷偷用术法感知数据流，精准定位到故障节点。他编了个理由说是「直觉」，虽然救了火，但监控日志里留下无法解释的异常波动。
-  word_count: 3500
+  content_focus: 周五深夜服务器故障，陈明在卫生间借术法感知定位故障点，救火成功，却在日志中留下了异常波动。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
-  - lin_yue
+  - 陈明
+  - 赵磊
+  - 林月
+  involved_settings:
+  - server_anomaly
+  - company
 - id: ch_007
   title: 第七章：996与修炼
-  dramatic_position: 合
-  summary: 陈明找到工作和修炼的微妙平衡——早晨通勤时地铁冥想，上班低调用能力提升效率，下班后在出租屋练习控制。赵磊虽觉得陈明变了但抓不到证据，林月因团队效率提升给陈明加了绩效。结尾陈明看着手腕符文自嘲：别人觉醒是拯救世界，他的觉醒是更高效地996。
-  content_focus: 陈明找到工作和修炼的微妙平衡——早晨通勤时地铁冥想，上班低调用能力提升效率，下班后在出租屋练习控制。赵磊虽觉得陈明变了但抓不到证据，林月因团队效率提升给陈明加了绩效。结尾陈明看着手腕符文自嘲：别人觉醒是拯救世界，他的觉醒是更高效地996。
-  word_count: 3500
+  section_id: sec_002
+  summary: '---'
+  dramatic_position: 转
+  content_focus: 陈明开始尝试把地铁通勤、午休和下班后时间拼成一套修炼日程，能力和绩效一起上升，也让风险同步放大。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
-  - lin_yue
+  - 陈明
+  - 赵磊
+  involved_settings:
+  - modern_magic_balance
+  - shufa_system
 - id: ch_008
   title: 第八章：赵磊的直觉
-  dramatic_position: 起
-  summary: 赵磊决定调查陈明。他开始记录陈明的异常行为：修bug速度、眼神变化、手势等。在茶水间「偶遇」陈明自言自语（实际在练习控制术法），赵磊开始怀疑。
-  content_focus: 赵磊决定调查陈明。他开始记录陈明的异常行为：修bug速度、眼神变化、手势等。在茶水间「偶遇」陈明自言自语（实际在练习控制术法），赵磊开始怀疑。
-  word_count: 3500
+  section_id: sec_002
+  summary: '---'
+  dramatic_position: 合
+  content_focus: 赵磊把陈明近期的异常串起来，决定不惊动别人，先按自己的方式悄悄调查。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
+  - 陈明
+  - 赵磊
+  involved_settings:
+  - company
+  - server_anomaly
 - id: ch_009
-  title: 第九章：绩效与风险
-  dramatic_position: 承
-  summary: 林月注意到陈明的绩效异常优秀，开始关注。她查看了服务器日志，发现了无法解释的异常波动。陈明不知道自己已经被注意。
-  content_focus: 林月注意到陈明的绩效异常优秀，开始关注。她查看了服务器日志，发现了无法解释的异常波动。陈明不知道自己已经被注意。
-  word_count: 3500
-  involved_characters:
-  - chen_ming
-  - lin_yue
-  - zhao_lei
-- id: ch_010
-  title: 第十章：暴露危机
-  dramatic_position: 转
-  summary: 林月约陈明单独谈话，暗示知道他「有些不一样」。陈明紧张到差点失控，符文微微发光。他用程序员的冷静分析应对，勉强过关。但危机已经埋下。
-  content_focus: 林月约陈明单独谈话，暗示知道他「有些不一样」。陈明紧张到差点失控，符文微微发光。他用程序员的冷静分析应对，勉强过关。但危机已经埋下。
-  word_count: 3500
-  involved_characters:
-  - chen_ming
-  - lin_yue
-- id: ch_011
-  title: 第十一章：深夜练习
-  dramatic_position: 合
-  summary: 陈明决定更谨慎地练习能力。他在深夜公园里练习悬浮物体，被夜跑的路人看到影子。新的危机：能力暴露的风险在增加。
-  content_focus: 陈明决定更谨慎地练习能力。他在深夜公园里练习悬浮物体，被夜跑的路人看到影子。新的危机：能力暴露的风险在增加。
-  word_count: 3500
-  involved_characters:
-  - chen_ming
-- id: ch_012
-  title: 第十二章：日志追踪
+  title: 第九章：日志追踪
+  section_id: sec_003
+  summary: '---'
   dramatic_position: 起
-  summary: 技术部门开始调查服务器日志异常。林月配合调查，陈明担心术法痕迹被发现。赵磊主动提出帮忙分析，意外成为陈明的帮手。
-  content_focus: 技术部门开始调查服务器日志异常。林月配合调查，陈明担心术法痕迹被发现。赵磊主动提出帮忙分析，意外成为陈明的帮手。
-  word_count: 3500
+  content_focus: 林月在例行复盘里注意到一段解释不通的监控日志，陈明意识到“术法留痕”会成为真正的外部压力。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
-  - lin_yue
-- id: ch_013
-  title: 第十三章：赵磊的抉择
+  - 陈明
+  - 林月
+  involved_settings:
+  - server_anomaly
+  - company
+- id: ch_010
+  title: 第十章：机房阴影
+  section_id: sec_003
+  summary: '---'
   dramatic_position: 承
-  summary: 赵磊发现了陈明的秘密。他没有揭发，而是选择找陈明直接问清楚。两个好友深夜长谈，赵磊选择帮助陈明隐藏这个秘密。
-  content_focus: 赵磊发现了陈明的秘密。他没有揭发，而是选择找陈明直接问清楚。两个好友深夜长谈，赵磊选择帮助陈明隐藏这个秘密。
-  word_count: 3500
+  content_focus: 夜班值守时，陈明在机房里看见一段像活物一样游动的数据噪声，第一次察觉公司底层可能藏着更大的异常。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
-- id: ch_014
-  title: 第十四章：暂时的平衡
+  - 陈明
+  involved_settings:
+  - b3_server_room
+  - shufa_system
+- id: ch_011
+  title: 第十一章：B3值班单
+  section_id: sec_003
+  summary: '---'
+  dramatic_position: 转
+  content_focus: 陈明翻到一张并不存在于排班系统里的旧值班单，值班人名字被删得只剩残缺首字母，机房底层的时间线开始错位。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 赵磊
+  involved_settings:
+  - b3_server_room
+  - grey_well_forum
+- id: ch_012
+  title: 第十二章：第一次补丁
+  section_id: sec_003
+  summary: '---'
   dramatic_position: 合
-  summary: 在赵磊的帮助下，日志异常被解释为「系统波动」。陈明暂时安全，但术法使用更加谨慎。林月开始真正关注这个特别的下属。新的平衡建立，但更大的危机正在酝酿。
-  content_focus: 在赵磊的帮助下，日志异常被解释为「系统波动」。陈明暂时安全，但术法使用更加谨慎。林月开始真正关注这个特别的下属。新的平衡建立，但更大的危机正在酝酿。
-  word_count: 3500
+  content_focus: 陈明在极度紧张下完成了第一次真正意义上的“小补丁”，暂时压住机房噪声，也确认自己并非只能被动承受。
+  word_count: 4000
   involved_characters:
-  - chen_ming
-  - zhao_lei
-  - lin_yue
+  - 陈明
+  involved_settings:
+  - logic_patch
+  - shufa_system
+- id: ch_013
+  title: 第十三章：林月的试探
+  section_id: sec_003
+  summary: '---'
+  dramatic_position: 余波
+  content_focus: 林月借复盘为由单独找陈明谈话，不点破异常，只逼他自己承认最近到底在隐瞒什么。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 林月
+  involved_settings:
+  - company
+  - server_anomaly
+- id: ch_014
+  title: 第十四章：王大伟的审计
+  section_id: sec_004
+  summary: '---'
+  dramatic_position: 起
+  content_focus: 交付总监王大伟借异常日志和项目波动推动内部审计，陈明第一次感受到来自公司政治层面的恶意。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 王大伟
+  - 林月
+  involved_settings:
+  - audit_storm
+  - company
+- id: ch_015
+  title: 第十五章：红色需求文档
+  section_id: sec_004
+  summary: '---'
+  dramatic_position: 承
+  content_focus: 产品经理徐墨递来一份格式完全正常、却让人读完心里发冷的红色需求文档，陈明从字句里嗅到异常味道。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 徐墨
+  involved_settings:
+  - red_requirement_doc
+  - company
+- id: ch_016
+  title: 第十六章：需求评审夜
+  section_id: sec_004
+  summary: '---'
+  dramatic_position: 转
+  content_focus: 深夜需求评审中，文档像是在主动诱导讨论方向，陈明不得不一边装普通人，一边用术式推演防止会议彻底跑偏。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 徐墨
+  - 林月
+  involved_settings:
+  - red_requirement_doc
+  - shufa_system
+- id: ch_017
+  title: 第十七章：徐墨的笑
+  section_id: sec_004
+  summary: '---'
+  dramatic_position: 合
+  content_focus: 徐墨在散会后丢给陈明一句含义不明的提醒，像是确认了什么，又像是在等他主动迈进更深的水里。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 徐墨
+  involved_settings:
+  - red_requirement_doc
+  - grey_well_forum
+- id: ch_018
+  title: 第十八章：站队
+  section_id: sec_004
+  summary: '---'
+  dramatic_position: 余震
+  content_focus: 王大伟和林月分别用不同方式逼陈明表态，陈明第一次意识到“保持中立”也是一种正在失效的选项。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 林月
+  - 王大伟
+  involved_settings:
+  - audit_storm
+  - company
+- id: ch_019
+  title: 第十九章：团建名单
+  section_id: sec_005
+  summary: '---'
+  dramatic_position: 起
+  content_focus: 部门团建名单落到陈明手里，他本能地觉得这趟看似普通的外出会把公司里的暗线全部带到明面。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 赵磊
+  - 林月
+  involved_settings:
+  - company
+  - audit_storm
+- id: ch_020
+  title: 第二十章：山庄断网
+  section_id: sec_005
+  summary: '---'
+  dramatic_position: 承
+  content_focus: 山庄第一晚突然断网断电，所有人的手机都在同一时间弹出空白通知，陈明意识到这里与机房异常属于同类结构。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 赵磊
+  - 林月
+  involved_settings:
+  - logic_patch
+  - company
+- id: ch_021
+  title: 第二十一章：鬼打墙
+  section_id: sec_005
+  summary: '---'
+  dramatic_position: 转
+  content_focus: 团建队伍在山道上绕回原地，赵磊终于亲眼看见不合常理的一幕，普通人的缓冲区被硬生生撕开了口子。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 赵磊
+  - 林月
+  involved_settings:
+  - modern_magic_balance
+  - shufa_system
+- id: ch_022
+  title: 第二十二章：局域网共享
+  section_id: sec_005
+  summary: '---'
+  dramatic_position: 爆发
+  content_focus: 为了把所有人带出去，陈明第一次尝试把自己的逻辑链感知共享给队友，局部建立起一个脆弱却有效的协作网络。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 赵磊
+  - 林月
+  involved_settings:
+  - logic_patch
+  - shufa_system
+- id: ch_023
+  title: 第二十三章：活下来的方案
+  section_id: sec_005
+  summary: '---'
+  dramatic_position: 收束
+  content_focus: 一行人勉强脱困，但每个人都在事后保留了不同版本的记忆，陈明意识到异常并非只会制造恐惧，还会篡改叙述。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 赵磊
+  - 林月
+  - 徐墨
+  involved_settings:
+  - logic_patch
+  - grey_well_forum
+- id: ch_024
+  title: 第二十四章：团建复盘
+  section_id: sec_005
+  summary: '---'
+  dramatic_position: 余波
+  content_focus: 回到公司后，林月强压住对外说法，王大伟借机做内部文章，陈明则拿到了那份通往长线主线的旧档案。
+  word_count: 4000
+  involved_characters:
+  - 陈明
+  - 林月
+  - 王大伟
+  - 徐墨
+  involved_settings:
+  - audit_storm
+  - grey_well_forum

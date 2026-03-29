@@ -9,6 +9,7 @@
 """
 
 import sys
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -218,6 +219,21 @@ class TestListEntities:
         result = list_entities("test", entity_type="组织", project_root=entity_project)
         assert len(result) == 1
         assert result[0]["name"] == "天山派"
+
+
+def test_world_query_supports_direct_script_execution():
+    repo_root = Path(__file__).parent.parent
+    script = repo_root / "tools" / "world_query.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "test_novel", "company"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "公司（互联网科技公司）" in result.stdout
 
     def test_list_empty_dir(self, tmp_path):
         entities_dir = tmp_path / "data" / "novels" / "empty" / "src" / "world" / "entities"

@@ -1,0 +1,25 @@
+id: wang_dawei
+name: 王大伟
+tier: 重要配角
+age: 39
+occupation: 交付总监
+identity: 交付总监
+brief: 结果导向到近乎冷酷的交付总监，擅长把流程、审计和绩效变成施压工具，是前中期最现实也最危险的职场对手。
+background: 王大伟原本是从实施一线一路做上来的老牌管理者，对“救火”“审计”“内部背锅链路”极其熟悉。星辰科技扩张之后，他逐步掌握了跨组资源与交付节奏，在很多人眼里既是能打的管理层，也是最不想惹的人之一。
+personality:
+- 极强的结果导向，认为一切都应该为交付负责
+- 熟悉组织规则，擅长用流程名义达成个人目的
+- 不迷信所谓“努力”，只接受可量化结果
+- 真正危险的地方在于他从不急着翻脸，而是慢慢收窄别人的活动空间
+relationships:
+- target: chen_ming
+  kind: pressure
+  weight: 0.81
+  note: 将陈明视作需要被管理与筛选的变量
+- target: lin_yue
+  kind: conflict
+  weight: 0.66
+  note: 管理理念长期冲突
+appearance:
+  clothing: 总是西装笔挺
+  features: 语速不快

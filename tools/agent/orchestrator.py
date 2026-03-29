@@ -11,10 +11,12 @@ from typing import Any, Callable, Optional
 import yaml
 
 from ..context_builder import ContextBuilder
+from ..frontmatter import parse_toml_front_matter
+from ..source_sync import run_sync
 from ..story_planning import StoryPlanningStore
 from ..utils import parse_chapter_id
 from ..workflow_scheduler import WorkflowScheduler
-from .toolkits import WRITING_TOOLKIT
+from .toolkits import ORCHESTRATOR_TOOLKIT, WRITING_TOOLKIT
 from .book_state import BookStage, BookState, BookStateStore
 
 
@@ -24,6 +26,19 @@ class OrchestratorResult:
     stage: BookStage
     blocked: bool
     next_action: str
+
+
+@dataclass(frozen=True)
+class WriteRequest:
+    chapter_id: str
+    guidance: str = ""
+    target_words: int = 0
+
+
+@dataclass(frozen=True)
+class ReviewRequest:
+    chapter_id: str
+    guidance: str = ""
 
 
 class OpenWriteOrchestrator:
@@ -138,6 +153,8 @@ class OpenWriteOrchestrator:
         self,
         chapter_id: str,
         preflight_result: Optional[dict[str, Any]] = None,
+        guidance: str = "",
+        target_words: int = 0,
     ) -> dict[str, Any]:
         self.state = self.state_store.load_or_create()
         packet_result = preflight_result or self.run_preflight(chapter_id)
@@ -154,6 +171,7 @@ class OpenWriteOrchestrator:
         packet = packet_result["packet"]
         scheduler = WorkflowScheduler(self.project_root, self.novel_id)
         workflow = scheduler.load_or_create(chapter_id)
+        active_stage = "writing"
         try:
             scheduler.start_stage(workflow, "context_assembly")
             scheduler.complete_stage(
@@ -171,6 +189,8 @@ class OpenWriteOrchestrator:
                     "packet": packet,
                     "context_packet": packet,
                     "prompt_sections": packet["prompt_sections"],
+                    "guidance": guidance,
+                    "target_words": target_words,
                 }
             )
             result = self._normalize_write_result(raw_result)
@@ -185,33 +205,69 @@ class OpenWriteOrchestrator:
                 data={"draft_path": draft_path},
             )
 
-            self.state.stage = BookStage.REVIEW_AND_REVISE
+            review_result = None
+            review_executor = self._get_optional_orchestrator_executor("review_chapter")
+            if review_executor is not None:
+                active_stage = "review"
+                scheduler.start_stage(workflow, "review")
+                raw_review = review_executor({"chapter_id": chapter_id, "guidance": guidance})
+                review_result = self._normalize_review_result(raw_review)
+                if review_result.get("error") or not review_result.get("ok", True):
+                    raise RuntimeError(review_result.get("error", "review_chapter_failed"))
+                scheduler.complete_stage(
+                    workflow,
+                    "review",
+                    message="chapter reviewed",
+                    data={"passed": bool(review_result.get("passed", False))},
+                )
+
             self.state.current_chapter = chapter_id
-            self.state.blocking_reason = ""
-            self.state.last_agent_action = "delegated_writing"
+            if review_result is None:
+                self.state.stage = BookStage.REVIEW_AND_REVISE
+                self.state.blocking_reason = "review_not_run"
+                self.state.last_agent_action = "delegated_writing_pending_review"
+                next_stage = BookStage.REVIEW_AND_REVISE.value
+                next_action = "manual_review"
+            elif review_result.get("passed", False):
+                self.state.stage = BookStage.CHAPTER_PREFLIGHT
+                self.state.blocking_reason = ""
+                self.state.last_agent_action = "delegated_writing_review_passed"
+                next_stage = BookStage.CHAPTER_PREFLIGHT.value
+                next_action = "ready_for_next_chapter"
+            else:
+                self.state.stage = BookStage.REVIEW_AND_REVISE
+                self.state.blocking_reason = "review_revision_requested"
+                self.state.last_agent_action = "delegated_writing_review_failed"
+                next_stage = BookStage.REVIEW_AND_REVISE.value
+                next_action = "review_and_revise"
             self.state_store.save(self.state)
 
             return {
                 "ok": True,
                 "chapter_id": chapter_id,
                 "reason": "",
-                "next_stage": BookStage.REVIEW_AND_REVISE.value,
-                "next_action": "review_and_revise",
+                "next_stage": next_stage,
+                "next_action": next_action,
                 "workflow_stage": scheduler.load_workflow(chapter_id).current_stage,
+                "review": review_result,
             }
         except Exception as exc:
             error = str(exc) or exc.__class__.__name__
             try:
-                scheduler.fail_stage(workflow, "writing", error)
+                scheduler.fail_stage(workflow, active_stage, error)
             except Exception:
                 self._persist_failed_workflow(
                     scheduler=scheduler,
                     workflow=workflow,
-                    stage_name="writing",
+                    stage_name=active_stage,
                     error=error,
                 )
-            self.state.blocking_reason = "writing_failed"
-            self.state.last_agent_action = "delegated_writing_failed"
+            self.state.blocking_reason = f"{active_stage}_failed"
+            if active_stage == "review":
+                self.state.stage = BookStage.REVIEW_AND_REVISE
+                self.state.last_agent_action = "delegated_review_failed"
+            else:
+                self.state.last_agent_action = "delegated_writing_failed"
             self.state_store.save(self.state)
             return {
                 "ok": False,
@@ -224,6 +280,9 @@ class OpenWriteOrchestrator:
     def handle_user_message(self, text: str) -> OrchestratorResult:
         self.state = self.state_store.load_or_create()
 
+        if self._is_status_request(text):
+            return self._handle_status_request()
+
         if self._is_negated_chapter_request(text):
             return self._ignored_result()
 
@@ -233,15 +292,25 @@ class OpenWriteOrchestrator:
         if self._is_negated_outline_confirmation(text):
             return self._ignored_result()
 
-        chapter_id = self._extract_chapter_request(text)
-        if chapter_id:
-            return self._handle_chapter_request(chapter_id)
+        write_request = self._extract_write_request(text)
+        if write_request:
+            return self._handle_chapter_request(write_request)
+
+        review_request = self._extract_review_request(text)
+        if review_request:
+            return self._handle_review_request(review_request)
 
         if self._looks_like_foundation_confirmation(text):
             return self._handle_foundation_confirmation()
 
         if self._looks_like_outline_confirmation(text):
             return self._handle_outline_confirmation()
+
+        if self._looks_like_outline_generation_request(text):
+            return self._handle_outline_generation(text)
+
+        if self._looks_like_character_creation_request(text):
+            return self._handle_character_creation(text)
 
         return self._handle_discovery(text)
 
@@ -256,17 +325,22 @@ class OpenWriteOrchestrator:
         if not quiet:
             print(result.message)
 
-        chapter_id = self._extract_chapter_request(instruction)
-        if chapter_id and result.next_action == "chapter_preflight" and not result.blocked:
-            preflight = self.run_preflight(chapter_id)
+        write_request = self._extract_write_request(instruction)
+        if write_request and result.next_action == "chapter_preflight" and not result.blocked:
+            preflight = self.run_preflight(write_request.chapter_id)
             if not quiet:
-                print(self._format_cli_preflight_message(chapter_id, preflight))
+                print(self._format_cli_preflight_message(write_request.chapter_id, preflight))
             if not preflight.get("ok"):
                 return 1
 
-            delegate = self.delegate_writing(chapter_id, preflight_result=preflight)
+            delegate = self.delegate_writing(
+                write_request.chapter_id,
+                preflight_result=preflight,
+                guidance=write_request.guidance,
+                target_words=write_request.target_words,
+            )
             if not quiet:
-                print(self._format_cli_delegate_message(chapter_id, delegate))
+                print(self._format_cli_delegate_message(write_request.chapter_id, delegate))
             return 0 if delegate.get("ok") else 1
 
         return 0 if not result.blocked else 1
@@ -292,7 +366,13 @@ class OpenWriteOrchestrator:
         )
 
     def _is_status_request(self, text: str) -> bool:
-        return text.strip() in {"查看项目状态", "查看状态", "status"}
+        normalized = re.sub(r"\s+", "", text).lower()
+        if normalized in {"查看项目状态", "查看状态", "查看当前状态", "status"}:
+            return True
+        return (
+            ("状态" in text or "进度" in text)
+            and any(token in text for token in ("查看", "当前", "项目", "现在", "目前"))
+        )
 
     def _handle_status_request(self) -> OrchestratorResult:
         state = self._snapshot_state()
@@ -325,12 +405,25 @@ class OpenWriteOrchestrator:
 
     def _format_cli_delegate_message(self, chapter_id: str, result: dict[str, Any]) -> str:
         if result.get("ok"):
+            review = result.get("review") or {}
+            if review:
+                if review.get("passed", False):
+                    return f"章节已完成并通过审查: {chapter_id}"
+                score = review.get("score")
+                if score is not None:
+                    return f"章节已生成但审查未通过: {chapter_id} (score={score})"
+                return f"章节已生成但审查未通过: {chapter_id}"
             return f"章节已委派: {chapter_id}"
 
         reason = result.get("reason", "writing_failed")
         return f"章节委派失败: {chapter_id} ({reason})"
 
     def _handle_foundation_confirmation(self) -> OrchestratorResult:
+        if self.state.stage not in {BookStage.DISCOVERY, BookStage.FOUNDATION}:
+            return self._stage_blocked_result(
+                "当前不在基础设定确认阶段，我先不推进基础设定升格。",
+                next_action="ignore",
+            )
         if not self.story_planning_store.promote_foundation():
             self.state.blocking_reason = "missing_foundation_drafts"
             self.state.last_agent_action = "blocked_foundation_promotion_missing_drafts"
@@ -355,6 +448,16 @@ class OpenWriteOrchestrator:
         )
 
     def _handle_outline_confirmation(self) -> OrchestratorResult:
+        if self.state.stage != BookStage.ROLLING_OUTLINE:
+            return self._stage_blocked_result(
+                "当前不在大纲确认阶段，我先不推进章节写作。",
+                next_action="ignore",
+            )
+        if self.state.pending_confirmation != "outline_scope":
+            return self._stage_blocked_result(
+                "当前没有待确认的大纲范围，我先保持现状。",
+                next_action="ignore",
+            )
         if not self.story_planning_store.promote_outline(confirmed=True):
             self.state.blocking_reason = "missing_outline_draft"
             self.state.last_agent_action = "blocked_outline_promotion_missing_draft"
@@ -366,6 +469,7 @@ class OpenWriteOrchestrator:
                 next_action="prepare_outline_draft",
             )
 
+        self._sync_runtime_caches(sync_outline=True, sync_characters=False)
         self.state.stage = BookStage.CHAPTER_PREFLIGHT
         self.state.pending_confirmation = ""
         self.state.blocking_reason = ""
@@ -378,7 +482,104 @@ class OpenWriteOrchestrator:
             next_action="chapter_preflight",
         )
 
-    def _handle_chapter_request(self, chapter_id: str) -> OrchestratorResult:
+    def _handle_outline_generation(self, text: str) -> OrchestratorResult:
+        try:
+            outline = self._generate_outline_draft(text)
+        except Exception as exc:
+            return self._stage_blocked_result(
+                f"大纲草案生成失败: {exc}",
+                next_action="generate_outline_failed",
+            )
+
+        self.story_planning_store.save_outline_draft(outline)
+        if self.state.stage in {
+            BookStage.DISCOVERY,
+            BookStage.FOUNDATION,
+            BookStage.ROLLING_OUTLINE,
+        }:
+            self.state.stage = BookStage.ROLLING_OUTLINE
+            self.state.pending_confirmation = "outline_scope"
+            next_action = "request_outline_confirmation"
+            message = "已生成大纲草案。请确认可写范围后再进入章节编写。"
+        else:
+            next_action = "review_outline_draft"
+            message = "已生成新的大纲草案，但我没有切换当前流程状态。"
+        self.state.blocking_reason = ""
+        self.state.last_agent_action = "generated_outline_draft"
+        self.state_store.save(self.state)
+        return OrchestratorResult(
+            message=message,
+            stage=self.state.stage,
+            blocked=False,
+            next_action=next_action,
+        )
+
+    def _handle_character_creation(self, text: str) -> OrchestratorResult:
+        try:
+            content = self._generate_character_document(text)
+            name = self._extract_generated_character_name(content)
+            executor = self._get_orchestrator_executor("create_character")
+            result = executor({"name": name, "content": content})
+            if result.get("error"):
+                raise RuntimeError(result["error"])
+            self._sync_runtime_caches(sync_outline=False, sync_characters=True)
+        except Exception as exc:
+            return self._stage_blocked_result(
+                f"角色创建失败: {exc}",
+                next_action="create_character_failed",
+            )
+
+        self.state.blocking_reason = ""
+        self.state.last_agent_action = "created_character"
+        self.state_store.save(self.state)
+        return OrchestratorResult(
+            message=f"已创建角色 {name}，并同步角色卡缓存。",
+            stage=self.state.stage,
+            blocked=False,
+            next_action="character_created",
+        )
+
+    def _handle_review_request(self, request: ReviewRequest) -> OrchestratorResult:
+        try:
+            executor = self._get_orchestrator_executor("review_chapter")
+            result = self._normalize_review_result(
+                executor(
+                    {
+                        "chapter_id": request.chapter_id,
+                        "guidance": request.guidance,
+                    }
+                )
+            )
+            if result.get("error") or not result.get("ok", True):
+                raise RuntimeError(result.get("error", "review_failed"))
+        except Exception as exc:
+            return self._stage_blocked_result(
+                f"章节审查失败: {exc}",
+                next_action="review_failed",
+            )
+
+        score = result.get("score")
+        if score is not None:
+            summary = (
+                f"已审查 {request.chapter_id}，结果: "
+                f"{'通过' if result.get('passed', False) else '未通过'}，得分 {score}。"
+            )
+        else:
+            summary = (
+                f"已审查 {request.chapter_id}，结果: "
+                f"{'通过' if result.get('passed', False) else '未通过'}。"
+            )
+        self.state.blocking_reason = ""
+        self.state.last_agent_action = "reviewed_chapter"
+        self.state_store.save(self.state)
+        return OrchestratorResult(
+            message=summary,
+            stage=self.state.stage,
+            blocked=False,
+            next_action="review_completed",
+        )
+
+    def _handle_chapter_request(self, request: WriteRequest) -> OrchestratorResult:
         if self.state.stage != BookStage.CHAPTER_PREFLIGHT:
             self.state.blocking_reason = "outline_not_confirmed"
             self.state.last_agent_action = "blocked_chapter_request_before_outline_confirmation"
@@ -390,18 +591,21 @@ class OpenWriteOrchestrator:
                 next_action="request_outline_confirmation",
             )
 
-        self.state.current_chapter = chapter_id
+        self.state.current_chapter = request.chapter_id
         self.state.blocking_reason = ""
         self.state.last_agent_action = "recorded_current_chapter"
         self.state_store.save(self.state)
+        message = f"已记录当前章节 {request.chapter_id}，下一步进入章节预检。"
+        if request.guidance:
+            message = f"已记录当前章节 {request.chapter_id} 和额外写作要求，下一步进入章节预检。"
         return OrchestratorResult(
-            message=f"已记录当前章节 {chapter_id}，下一步进入章节预检。",
+            message=message,
             stage=self.state.stage,
             blocked=False,
             next_action="chapter_preflight",
         )
 
-    def _extract_chapter_request(self, text: str) -> Optional[str]:
+    def _extract_write_request(self, text: str) -> Optional[WriteRequest]:
         match = re.search(
             r"(?:开始写|写一下|写出|帮我写|请写|我要写|写)\s*"
             r"(?P<chapter>ch\s*_\s*\d{3}|第\s*[零一二三四五六七八九十百千万\d]+\s*章)",
@@ -411,8 +615,41 @@ class OpenWriteOrchestrator:
         if match:
             chapter_id = parse_chapter_id(re.sub(r"\s+", "", match.group("chapter")))
             if chapter_id:
-                return chapter_id
+                guidance = text[match.end() :].strip()
+                guidance = re.sub(r"^[，,;；。:\s]+", "", guidance)
+                target_words = self._extract_target_words(guidance)
+                return WriteRequest(
+                    chapter_id=chapter_id,
+                    guidance=guidance,
+                    target_words=target_words,
+                )
         return None
+
+    def _extract_chapter_request(self, text: str) -> Optional[str]:
+        request = self._extract_write_request(text)
+        return request.chapter_id if request else None
+
+    def _extract_review_request(self, text: str) -> Optional[ReviewRequest]:
+        match = re.search(
+            r"(?:审查|复检|review)\s*"
+            r"(?P<chapter>latest|最新章节|ch\s*_\s*\d{3}|第\s*[零一二三四五六七八九十百千万\d]+\s*章)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+
+        raw_chapter = re.sub(r"\s+", "", match.group("chapter"))
+        if raw_chapter in {"latest", "最新章节"}:
+            chapter_id = "latest"
+        else:
+            chapter_id = parse_chapter_id(raw_chapter)
+        if not chapter_id:
+            return None
+
+        guidance = text[match.end() :].strip()
+        guidance = re.sub(r"^[，,;；。:\s]+", "", guidance)
+        return ReviewRequest(chapter_id=chapter_id, guidance=guidance)
 
     def _is_negated_chapter_request(self, text: str) -> bool:
         compact = re.sub(r"\s+", "", text)
@@ -471,12 +708,55 @@ class OpenWriteOrchestrator:
             or re.search(fr"{outline}.{{0,12}}{negation}", compact)
         )
 
+    def _looks_like_outline_generation_request(self, text: str) -> bool:
+        if any(token in text for token in ("确认", "确认好了", "确认通过", "可写")):
+            return False
+        if not any(token in text for token in ("大纲", "提纲", "四级大纲", "章节规划")):
+            return False
+        return any(token in text for token in ("生成", "创建", "设计", "规划", "整理", "来一份"))
+
+    def _looks_like_character_creation_request(self, text: str) -> bool:
+        if "角色" not in text:
+            return False
+        return any(token in text for token in ("创建", "生成", "设计", "补一个", "增加一个", "来个"))
+
+    def _extract_target_words(self, text: str) -> int:
+        match = re.search(r"(?:字数|约|控制在)\s*(\d{3,5})", text)
+        if not match:
+            return 0
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return 0
+
+    def _get_orchestrator_executor(self, tool_name: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+        if tool_name not in ORCHESTRATOR_TOOLKIT:
+            raise KeyError(f"Tool {tool_name} is not part of ORCHESTRATOR_TOOLKIT")
+        if tool_name not in self.tool_executors:
+            raise KeyError(f"Missing executor for {tool_name}")
+        return self.tool_executors[tool_name]
+
+    def _get_optional_orchestrator_executor(
+        self, tool_name: str
+    ) -> Optional[Callable[[dict[str, Any]], dict[str, Any]]]:
+        if tool_name not in ORCHESTRATOR_TOOLKIT:
+            return None
+        return self.tool_executors.get(tool_name)
+
     def _get_writing_executor(self, tool_name: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
         if tool_name not in WRITING_TOOLKIT:
             raise KeyError(f"Tool {tool_name} is not part of WRITING_TOOLKIT")
         if tool_name not in self.tool_executors:
             raise KeyError(f"Missing executor for {tool_name}")
         return self.tool_executors[tool_name]
+
+    def _stage_blocked_result(self, message: str, next_action: str) -> OrchestratorResult:
+        return OrchestratorResult(
+            message=message,
+            stage=self.state.stage,
+            blocked=True,
+            next_action=next_action,
+        )
 
     def _build_style_documents(
         self, context: Any, prompt_sections: dict[str, str]
@@ -582,6 +862,153 @@ class OpenWriteOrchestrator:
         if not isinstance(result, dict):
             raise TypeError("write_chapter returned invalid response")
         return result
+
+    def _normalize_review_result(self, result: Any) -> dict[str, Any]:
+        if not isinstance(result, dict):
+            raise TypeError("review_chapter returned invalid response")
+        normalized = dict(result)
+        normalized.setdefault("ok", "error" not in normalized)
+        normalized.setdefault("passed", bool(normalized.get("ok")))
+        return normalized
+
+    def _generate_outline_draft(self, request_text: str) -> str:
+        story_title = self._current_story_title()
+        context = self._build_story_context()
+        system_prompt = """你是 OpenWrite 的小说规划师。
+
+请输出一份可直接落盘的四级 Markdown 大纲草案，只输出 Markdown，不要解释，不要代码围栏。
+
+格式要求：
+- `# 作品名`
+- `## 第X篇：篇标题`
+- `### 第X节：节标题`
+- `#### 第X章：章标题`
+- 每篇至少包含：
+  > 篇弧线:
+  > 篇情感:
+- 每节至少包含：
+  > 节结构:
+  > 节情感:
+  > 节张力:
+- 每章至少包含：
+  > 内容焦点:
+  > 预估字数:
+  > 出场角色:
+
+约束：
+- 输出 2-3 篇，每篇 2-3 节，每节 2-3 章
+- 采用滚动大纲思路，优先保证前半段可写
+- 保持中文网文风格，信息具体，不写空泛套话"""
+        user_prompt = (
+            f"项目名：{story_title}\n"
+            f"用户请求：{request_text}\n\n"
+            f"已有设定：\n{context}"
+        )
+        return self._strip_code_fences(
+            self._chat_text(system_prompt, user_prompt, temperature=0.6, max_tokens=6000)
+        )
+
+    def _generate_character_document(self, request_text: str) -> str:
+        story_title = self._current_story_title()
+        context = self._build_story_context()
+        system_prompt = """你是 OpenWrite 的角色设计师。
+
+请输出一个可直接保存到 `src/characters/*.md` 的角色文档，只输出 Markdown，不要解释，不要代码围栏。
+
+格式要求：
+- 使用 TOML front matter
+- front matter 至少包含：id, name, tier, summary, tags
+- 正文至少包含：
+  # 角色名
+  ## 背景
+  ## 外貌
+  ## 性格
+  ## 与主角关系
+  ## 说话风格
+  ## 当前戏剧用途
+
+约束：
+- 如果用户没有提供名字，请自行起一个贴合题材的中文名
+- 内容要和已有世界观、主角气质、冲突方向相容
+- 如果用户提到关系约束，必须写进正文和 related 关系里"""
+        user_prompt = (
+            f"项目名：{story_title}\n"
+            f"角色需求：{request_text}\n\n"
+            f"已有设定：\n{context}"
+        )
+        return self._strip_code_fences(
+            self._chat_text(system_prompt, user_prompt, temperature=0.7, max_tokens=4000)
+        )
+
+    def _chat_text(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        from ..llm import LLMClient, LLMConfig, Message
+
+        config = LLMConfig.from_env()
+        client = LLMClient(config)
+        response = client.chat(
+            messages=[
+                Message("system", system_prompt),
+                Message("user", user_prompt),
+            ],
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        content = response.content.strip()
+        if not content:
+            raise RuntimeError("LLM returned empty content")
+        return content
+
+    def _build_story_context(self) -> str:
+        parts: list[str] = []
+        background = self.story_planning_store.read_story_document("background", max_chars=1800)
+        foundation = self.story_planning_store.read_story_document("foundation", max_chars=1800)
+        ideation = self._read_text(self.story_planning_store.ideation_path)[:1200]
+        if background:
+            parts.append(f"## 背景\n{background}")
+        if foundation:
+            parts.append(f"## 基础设定\n{foundation}")
+        if ideation:
+            parts.append(f"## 灵感记录\n{ideation}")
+        return "\n\n".join(parts).strip() or "暂无现成设定，请根据用户请求自行补足。"
+
+    def _current_story_title(self) -> str:
+        outline_text = self._read_text(self.story_planning_store.outline_src_path)
+        match = re.search(r"^#\s+(.+)$", outline_text, re.MULTILINE)
+        if match:
+            return match.group(1).strip()
+        return self.novel_id
+
+    def _strip_code_fences(self, text: str) -> str:
+        stripped = text.strip()
+        fenced = re.match(r"^```(?:markdown|md|toml)?\s*\n(?P<body>.*)\n```$", stripped, re.DOTALL)
+        if fenced:
+            return fenced.group("body").strip()
+        return stripped
+
+    def _extract_generated_character_name(self, content: str) -> str:
+        meta, body = parse_toml_front_matter(content)
+        meta_name = str(meta.get("name", "")).strip()
+        if meta_name:
+            return meta_name
+        heading = re.search(r"^#\s+(.+)$", body or content, re.MULTILINE)
+        if heading:
+            return heading.group(1).strip()
+        raise RuntimeError("generated character content missing name")
+
+    def _sync_runtime_caches(self, *, sync_outline: bool, sync_characters: bool) -> None:
+        run_sync(
+            self.project_root,
+            self.novel_id,
+            sync_outline=sync_outline,
+            sync_characters=sync_characters,
+        )
 
     def _persist_failed_workflow(
         self,

@@ -38,8 +38,14 @@ class StoryPlanningStore:
 
     def save_foundation_draft(self, background: str, foundation: str) -> None:
         self.runtime_planning_dir.mkdir(parents=True, exist_ok=True)
-        self.background_draft_path.write_text(background, encoding="utf-8")
-        self.foundation_draft_path.write_text(foundation, encoding="utf-8")
+        self.background_draft_path.write_text(
+            self._normalize_story_document("background", background),
+            encoding="utf-8",
+        )
+        self.foundation_draft_path.write_text(
+            self._normalize_story_document("foundation", foundation),
+            encoding="utf-8",
+        )
 
     def promote_foundation(self) -> bool:
         if not self.background_draft_path.exists() or not self.foundation_draft_path.exists():
