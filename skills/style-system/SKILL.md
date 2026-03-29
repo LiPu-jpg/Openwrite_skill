@@ -47,7 +47,7 @@ description: Use when user wants to initialize style, compose style layers, extr
 2. 记录偏好并生成 hints
 3. 如有参考作品，提取风格特征
 4. 合并共享层 + 专属层
-5. 保存到 `data/novels/{novel_id}/style/fingerprint.yaml`
+5. 保存到 `data/novels/{novel_id}/data/style/fingerprint.yaml`
 
 **问询问题**:
 - Q1: 基调（轻松幽默/严肃正剧/悬疑紧张/温馨治愈/热血爽文）
@@ -56,7 +56,7 @@ description: Use when user wants to initialize style, compose style layers, extr
 - Q4: 参考作品（可选）
 - Q5: 特殊要求（可选）
 
-**输出**: `data/novels/{novel_id}/style/fingerprint.yaml`
+**输出**: `data/novels/{novel_id}/data/style/fingerprint.yaml`
 
 ---
 
@@ -78,7 +78,7 @@ description: Use when user wants to initialize style, compose style layers, extr
 3. 区分可复用特征 vs 作品特定特征
 4. 生成提取报告
 
-**输出**: `data/novels/{novel_id}/style/extraction_report.yaml`
+**输出**: `data/novels/{novel_id}/data/style/extraction_report.yaml`
 
 ---
 
@@ -148,13 +148,13 @@ progress = pipeline.prepare(source_file=Path("术师手册.txt"))
 
 所有分块处理完毕后，输出完整风格档案到 `data/reference_styles/{source_name}/`。
 
-**进度追踪**: `data/novels/{novel_id}/style/extraction/progress.json`
+**进度追踪**: `data/novels/{novel_id}/data/style/extraction/progress.json`
 **支持断点续传**: 中途停止后，再次执行会从上次中断的分块继续。
 
 **输出目录结构**:
 ```
 data/novels/{novel_id}/
-  style/
+  data/style/
     extraction/
       progress.json              # 进度追踪
       chunks/                    # 已切割的文本块
@@ -187,13 +187,13 @@ data/novels/{novel_id}/
 1. 读取三层风格文档：
    - `craft/` - 通用技法（可选参考）
    - `data/reference_styles/{参考作品}/` - 提取的风格文档（核心约束）
-   - `data/novels/{id}/characters/` + `world/` - 作品设定（硬性约束）
+  - `data/novels/{id}/src/characters/` + `src/world/` - 作品设定（硬性约束）
    - 用户覆盖 - 最高优先级
 2. 按优先级合成：用户覆盖 > 作品设定 > 作品风格 > 通用技法
 3. 解决冲突
 4. 生成最终风格文档
 
-**输出**: `data/novels/{novel_id}/style/composed.md`
+**输出**: `data/novels/{novel_id}/data/style/composed.md`
 
 **合成优先级**:
 ```
@@ -215,7 +215,7 @@ data/novels/{novel_id}/
    - 与目标风格的偏差
 3. 生成改进建议
 
-**输出**: `data/novels/{novel_id}/style/analysis_report.yaml`
+**输出**: `data/novels/{novel_id}/data/style/analysis_report.yaml`
 
 ---
 
@@ -223,14 +223,14 @@ data/novels/{novel_id}/
 
 | 文件 | 路径 | 说明 |
 |------|------|------|
-| 风格指纹 | `data/novels/{id}/style/fingerprint.yaml` | 问询生成的专属风格 |
-| 提取报告 | `data/novels/{id}/style/extraction_report.yaml` | 从参考作品提取的特征（小文本） |
-| 合成风格 | `data/novels/{id}/style/composed.md` | 最终生成指令 |
-| 分析报告 | `data/novels/{id}/style/analysis_report.yaml` | 文本风格分析结果 |
+| 风格指纹 | `data/novels/{id}/data/style/fingerprint.yaml` | 问询生成的专属风格 |
+| 提取报告 | `data/novels/{id}/data/style/extraction_report.yaml` | 从参考作品提取的特征（小文本） |
+| 合成风格 | `data/novels/{id}/data/style/composed.md` | 最终生成指令 |
+| 分析报告 | `data/novels/{id}/data/style/analysis_report.yaml` | 文本风格分析结果 |
 | AI词库 | `craft/ai_patterns.yaml` | 40+ AI痕迹检测词库 |
-| 提取进度 | `data/novels/{id}/style/extraction/progress.json` | 大文本提取进度追踪 |
-| 分块清单 | `data/novels/{id}/style/extraction/chunks/manifest.json` | 文本切割清单 |
-| 批次发现 | `data/novels/{id}/style/extraction/batch_results/*.yaml` | 各批次原始发现 |
+| 提取进度 | `data/novels/{id}/data/style/extraction/progress.json` | 大文本提取进度追踪 |
+| 分块清单 | `data/novels/{id}/data/style/extraction/chunks/manifest.json` | 文本切割清单 |
+| 批次发现 | `data/novels/{id}/data/style/extraction/batch_results/*.yaml` | 各批次原始发现 |
 | 风格文档 | `data/reference_styles/{参考作品}/` | 提取的完整风格文档集（7个.md） |
 
 ---
@@ -305,7 +305,7 @@ Q1: 你希望作品的基调是？
 - 特殊约束: 禁用网络流行语
 
 文件已保存：
-data/novels/my_novel/style/fingerprint.yaml
+data/novels/my_novel/data/style/fingerprint.yaml
 ```
 
 ---
@@ -322,13 +322,13 @@ data/novels/my_novel/style/fingerprint.yaml
 - craft/dialogue_craft.md（对话技法）
 - craft/scene_craft.md（场景结构技法）
 - craft/rhythm_craft.md（节奏控制技法）
-- data/novels/my_novel/style/fingerprint.yaml（作品风格）
-- novels/my_novel/characters.md（作品设定）
+- data/novels/my_novel/data/style/fingerprint.yaml（作品风格）
+- data/novels/my_novel/src/characters/（作品设定）
 
 合成完成！
 
 最终风格文档已生成：
-data/novels/my_novel/style/composed.md
+data/novels/my_novel/data/style/composed.md
 
 包含：
 1. 硬性约束（不可违反）
@@ -394,7 +394,7 @@ data/novels/my_novel/style/composed.md
 ✅ 准备完成
 - 切割为 47 个分块（按章节边界）
 - 已创建风格文档目录
-- 进度文件: data/novels/my_novel/style/extraction/progress.json
+- 进度文件: data/novels/my_novel/data/style/extraction/progress.json
 
 开始提取第 1/47 批（第1-22章，29,847字）...
 

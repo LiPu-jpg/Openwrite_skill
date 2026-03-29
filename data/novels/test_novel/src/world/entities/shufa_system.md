@@ -1,6 +1,27 @@
-# 术法体系
++++
+id = "shufa_system"
+name = "术法体系"
+type = "concept"
+subtype = "magic_system"
+status = "active"
+summary = "现代社会中隐藏的超自然力量体系，觉醒者被称为术师，能通过精神力影响现实。"
+tags = ["力量体系", "术法", "觉醒", "核心设定"]
+detail_refs = ["规则", "特征", "关联"]
 
-> concept | magic_system | active
+[[related]]
+target = "wrist_rune"
+kind = "manifests_as"
+weight = 0.83
+note = "觉醒的具象标记"
+
+[[related]]
+target = "modern_magic_balance"
+kind = "constrained_by"
+weight = 0.79
+note = "在现代职场中的生存框架"
++++
+
+# 术法体系
 
 现代社会中隐藏的超自然力量体系，觉醒者被称为"术师"，能通过精神力操控现实。
 觉醒是随机事件，可能发生在任何普通人身上，没有血统或修炼前提。

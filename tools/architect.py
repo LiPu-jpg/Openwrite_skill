@@ -1,4 +1,4 @@
-"""建筑师 Agent - 从 InkOS architect.ts 融合
+"""建筑师 Agent
 
 AI 辅助创建大纲、世界观、角色设定。
 """
@@ -20,7 +20,12 @@ class FoundationResult:
     volume_outline: str
     book_rules: str
     current_state: str
-    pending_hooks: str
+    foreshadowing_seed: str
+
+    @property
+    def pending_hooks(self) -> str:
+        """兼容旧字段名。"""
+        return self.foreshadowing_seed
 
 
 @dataclass
@@ -115,14 +120,14 @@ class ArchitectAgent:
         current_state = self._generate_current_state(title, genre, story_bible, brief)
 
         # 生成伏笔
-        pending_hooks = self._generate_pending_hooks(title, volume_outline)
+        foreshadowing_seed = self._generate_foreshadowing_seed(title, volume_outline)
 
         return FoundationResult(
             story_bible=story_bible,
             volume_outline=volume_outline,
             book_rules=book_rules,
             current_state=current_state,
-            pending_hooks=pending_hooks,
+            foreshadowing_seed=foreshadowing_seed,
         )
 
     async def generate_outline(
@@ -405,7 +410,7 @@ class ArchitectAgent:
 
         return f"# 当前状态（第0章）\n\n{response.content}"
 
-    def _generate_pending_hooks(self, title: str, volume_outline: str) -> str:
+    def _generate_foreshadowing_seed(self, title: str, volume_outline: str) -> str:
         """生成伏笔列表"""
         from tools.llm import Message
 
@@ -436,6 +441,10 @@ class ArchitectAgent:
         )
 
         return f"# 伏笔列表\n\n{response.content}"
+
+    def _generate_pending_hooks(self, title: str, volume_outline: str) -> str:
+        """兼容旧方法名。"""
+        return self._generate_foreshadowing_seed(title, volume_outline)
 
     def _parse_chapter_outline(self, content: str, target_count: int) -> list[ChapterOutline]:
         """解析章节大纲"""

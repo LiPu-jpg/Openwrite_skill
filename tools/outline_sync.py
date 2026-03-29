@@ -101,7 +101,7 @@ def _parse_outline_md(content: str) -> Dict[str, Any]:
                         sections[current_sec_idx]["section_emotional_arc"] = value
                     elif "张力" in key:
                         sections[current_sec_idx]["section_tension"] = value
-            elif key in ("预估字数", "戏剧位置", "内容焦点"):
+            elif key in ("预估字数", "戏剧位置", "内容焦点", "出场角色", "涉及人物", "涉及概念", "涉及设定"):
                 if chapters:
                     if "字数" in key:
                         chapters[-1]["word_count"] = (
@@ -111,6 +111,15 @@ def _parse_outline_md(content: str) -> Dict[str, Any]:
                         chapters[-1]["dramatic_position"] = value
                     elif "焦点" in key:
                         chapters[-1]["summary"] = value
+                        chapters[-1]["content_focus"] = value
+                    elif key in ("出场角色", "涉及人物"):
+                        chapters[-1]["involved_characters"] = [
+                            x.strip() for x in value.split(",") if x.strip()
+                        ]
+                    elif key in ("涉及概念", "涉及设定"):
+                        chapters[-1]["involved_settings"] = [
+                            x.strip() for x in value.split(",") if x.strip()
+                        ]
 
             i += 1
             continue

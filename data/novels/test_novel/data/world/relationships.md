@@ -1,3 +1,10 @@
++++
+id = "relationships"
+type = "runtime_truth"
+summary = "陈明与赵磊的信任正在加深，而林月对陈明的关注已经从管理转向怀疑。"
+detail_refs = ["bonds", "status", "goals"]
++++
+
 # 角色关系矩阵
 
 ## 主要角色关系

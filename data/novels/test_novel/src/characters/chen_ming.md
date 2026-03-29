@@ -1,3 +1,26 @@
++++
+id = "chen_ming"
+name = "陈明"
+tier = "主角"
+age = 28
+occupation = "程序员 / 觉醒术师"
+summary = "普通程序员在加班夜觉醒术法，被迫在职场、生存与超自然真相之间艰难求生。"
+tags = ["都市", "职场", "异能", "成长", "主角"]
+detail_refs = ["基本信息", "外貌", "性格", "背景", "当前状态", "关系"]
+
+[[related]]
+target = "zhao_lei"
+kind = "friend"
+weight = 0.92
+note = "最信任的加班搭子"
+
+[[related]]
+target = "lin_yue"
+kind = "superior"
+weight = 0.73
+note = "直属上司，已开始注意到异常"
++++
+
 # 陈明
 
 ## 基本信息

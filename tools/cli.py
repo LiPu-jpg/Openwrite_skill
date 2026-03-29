@@ -2,6 +2,7 @@
 
 用法:
     openwrite init <novel_id>     # 初始化项目
+    openwrite sync                # 同步 src -> data
     openwrite write <chapter>     # 写章节
     openwrite review <chapter>    # 审查章节
     openwrite context <chapter>   # 构建上下文
@@ -10,11 +11,22 @@
     openwrite --help            # 显示帮助
 """
 
+import asyncio
 import sys
 import argparse
 import logging
+import os
+import json
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
+from datetime import datetime
+import re
+
+from tools.context_schema import normalize_context_payload, normalize_truth_file_key
+from tools.source_sync import (
+    collect_sync_status as _shared_collect_sync_status,
+    run_sync as _shared_run_sync,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -41,12 +53,16 @@ def main():
 
     _add_init_command(subparsers)
     _add_wizard_command(subparsers)
+    _add_sync_command(subparsers)
     _add_write_command(subparsers)
+    _add_multi_write_command(subparsers)
     _add_review_command(subparsers)
     _add_context_command(subparsers)
+    _add_assemble_command(subparsers)
     _add_style_command(subparsers)
     _add_radar_command(subparsers)
     _add_status_command(subparsers)
+    _add_doctor_command(subparsers)
     _add_agent_command(subparsers)
 
     args = parser.parse_args()
@@ -69,12 +85,18 @@ def _dispatch(args) -> int:
     """分发命令"""
     if args.command == "init":
         return _cmd_init(args)
+    elif args.command == "sync":
+        return _cmd_sync(args)
     elif args.command == "write":
         return _cmd_write(args)
+    elif args.command == "multi-write":
+        return _cmd_multi_write(args)
     elif args.command == "review":
         return _cmd_review(args)
     elif args.command == "context":
         return _cmd_context(args)
+    elif args.command == "assemble":
+        return _cmd_assemble(args)
     elif args.command == "style":
         return _cmd_style(args)
     elif args.command == "radar":
@@ -83,6 +105,8 @@ def _dispatch(args) -> int:
         return _cmd_wizard(args)
     elif args.command == "status":
         return _cmd_status(args)
+    elif args.command == "doctor":
+        return _cmd_doctor(args)
     elif args.command == "agent":
         return _cmd_agent(args)
     else:
@@ -103,12 +127,30 @@ def _add_wizard_command(subparsers):
     p.add_argument("--novel-id", help="小说 ID（可选）")
 
 
+def _add_sync_command(subparsers):
+    """sync 命令"""
+    p = subparsers.add_parser("sync", help="同步 src 到 data（大纲/角色）")
+    p.add_argument("--novel-id", help="小说 ID（默认从 novel_config.yaml 读取）")
+    p.add_argument("--check", action="store_true", help="仅检查是否存在未同步变更")
+    p.add_argument("--json", action="store_true", help="输出 JSON 结果（便于脚本/Agent 解析）")
+
+
 def _add_write_command(subparsers):
     """write 命令"""
     p = subparsers.add_parser("write", help="写章节")
     p.add_argument("chapter", nargs="?", default="next", help="章节 ID 或 'next'")
     p.add_argument("--no-review", action="store_true", help="跳过审查")
     p.add_argument("--temperature", "-T", type=float, default=0.7, help="写作温度")
+
+
+def _add_multi_write_command(subparsers):
+    """multi-write 命令"""
+    p = subparsers.add_parser("multi-write", help="使用多 Agent 编排写章节")
+    p.add_argument("chapter", nargs="?", default="next", help="章节 ID 或 'next'")
+    p.add_argument("--temperature", "-T", type=float, default=0.7, help="写作温度")
+    p.add_argument("--no-review", action="store_true", help="跳过审查")
+    p.add_argument("--show-packet", action="store_true", help="先输出组装包")
+    p.add_argument("--packet-output-dir", help="组装包测试输出目录（自动命名）")
 
 
 def _add_review_command(subparsers):
@@ -123,6 +165,21 @@ def _add_context_command(subparsers):
     p = subparsers.add_parser("context", help="构建上下文")
     p.add_argument("chapter", nargs="?", default="next", help="章节 ID")
     p.add_argument("--show", action="store_true", help="显示上下文内容")
+
+
+def _add_assemble_command(subparsers):
+    """assemble 命令"""
+    p = subparsers.add_parser("assemble", help="按 V2 规则组装章节上下文包")
+    p.add_argument("chapter", nargs="?", default="next", help="章节 ID 或 'next'")
+    p.add_argument(
+        "--format",
+        choices=["markdown", "json"],
+        default="markdown",
+        help="输出格式（默认 markdown）",
+    )
+    p.add_argument("--output", "-o", help="输出文件路径")
+    p.add_argument("--output-dir", help="测试输出目录（自动命名文件）")
+    p.add_argument("--no-print", action="store_true", help="不在终端打印结果")
 
 
 def _add_style_command(subparsers):
@@ -152,9 +209,14 @@ def _add_status_command(subparsers):
     subparsers.add_parser("status", help="查看项目状态")
 
 
+def _add_doctor_command(subparsers):
+    """doctor 命令"""
+    subparsers.add_parser("doctor", help="环境与路径自检")
+
+
 def _add_agent_command(subparsers):
     """agent 命令 - 使用内置 Agent"""
-    p = subparsers.add_parser("agent", help="使用 ReAct Agent（自然语言交互）")
+    p = subparsers.add_parser("agent", help="使用主编排 Agent（自然语言交互）")
     p.add_argument("instruction", nargs="?", default="查看项目状态", help="自然语言指令")
     p.add_argument("--max-turns", type=int, default=20, help="最大循环次数")
     p.add_argument("--quiet", action="store_true", help="静默模式")
@@ -203,15 +265,21 @@ def _cmd_write(args) -> int:
     async def do_write():
         builder = ContextBuilder(project_root, novel_id)
         context = builder.build_generation_context(chapter, window_size=5)
+        truth_manager = TruthFilesManager(project_root, novel_id)
+        truth = truth_manager.load_truth_files()
 
-        ctx_dict = {
-            "target_words": context.target_words,
-            "chapter_goals": context.chapter_goals,
-            "current_state": context.current_state,
-            "pending_hooks": context.pending_hooks,
-            "particle_ledger": context.particle_ledger,
-            "chapter_summaries": context.chapter_summaries,
-        }
+        ctx_dict = normalize_context_payload(
+            {
+                "target_words": context.target_words,
+                "chapter_goals": context.chapter_goals,
+                "current_state": context.current_state,
+                "foreshadowing_summary": context.foreshadowing_summary,
+                "ledger": context.ledger,
+                "relationships": truth.relationships,
+                "chapter_summaries": context.chapter_summaries,
+            },
+            include_aliases=True,
+        )
 
         try:
             from tools.llm import LLMClient, LLMConfig
@@ -233,30 +301,191 @@ def _cmd_write(args) -> int:
             logger.info(f"章节已生成: {result.title}")
             logger.info(f"字数: {result.word_count}")
 
-            truth_manager = TruthFilesManager(project_root, novel_id)
             truth_manager.create_snapshot(chapter_num - 1)
 
             _save_chapter(project_root, novel_id, chapter, result.title, result.content)
 
-            truth_manager.update_truth_files(
-                truth_manager.load_truth_files(),
-                {
-                    "chapter_summary": f"\n\n## 第{chapter_num}章 {result.title}\n\n{result.chapter_summary}"
-                },
-            )
-
-            logger.info("真相文件已更新")
+            updates = _collect_truth_updates(result.state_updates)
+            if updates:
+                truth_manager.update_truth_files(truth_manager.load_truth_files(), updates)
+                logger.info(f"真相文件已更新: {', '.join(updates.keys())}")
+            else:
+                logger.info("本章未产生可写入的真相增量")
             return 0
 
         except ImportError as e:
             logger.warning(f"LLM 模块未安装或配置: {e}")
             logger.info("提示: 设置环境变量 LLM_API_KEY, LLM_MODEL 等")
             logger.info("上下文已构建，可通过 openwrite context --show 查看")
-            if args.show:
+            if getattr(args, "show", False):
                 print(context.to_prompt_context())
             return 0
 
     return asyncio.run(do_write())
+
+
+def _cmd_sync(args) -> int:
+    """同步 src -> data（outline/character）"""
+    project_root = Path.cwd()
+    config = _load_config(project_root)
+    if not config and not args.novel_id:
+        logger.error("未找到 novel_config.yaml，请指定 --novel-id")
+        return 1
+
+    novel_id = args.novel_id or config.get("novel_id", "")
+    if not novel_id:
+        logger.error("无法确定 novel_id")
+        return 1
+
+    before = _collect_sync_status(project_root, novel_id)
+    suggestions = _build_sync_suggestions(before)
+    before_actions = _build_sync_actions(before)
+
+    if not args.json:
+        _print_sync_status(before)
+        for msg in suggestions:
+            logger.info(f"  建议: {msg}")
+
+    if args.check:
+        code = 2 if before["needs_sync"] else 0
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "mode": "check",
+                        "status": before,
+                        "suggestions": suggestions,
+                        "actions": before_actions,
+                        "ok": not before["needs_sync"],
+                        "exit_code": code,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        if before["needs_sync"]:
+            if not args.json:
+                logger.warning("检测到未同步项（仅检查模式，未执行写入）")
+            return code
+        if not args.json:
+            logger.info("同步状态正常")
+        return code
+
+    _run_sync(project_root, novel_id)
+    after = _collect_sync_status(project_root, novel_id)
+    after_suggestions = _build_sync_suggestions(after)
+    after_actions = _build_sync_actions(after)
+    code = 0 if not after["needs_sync"] else 1
+
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "mode": "apply",
+                    "before": before,
+                    "after": after,
+                    "suggestions": after_suggestions,
+                    "actions": after_actions,
+                    "ok": not after["needs_sync"],
+                    "exit_code": code,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return code
+
+    _print_sync_status(after)
+    for msg in after_suggestions:
+        logger.info(f"  建议: {msg}")
+
+    if after["needs_sync"]:
+        logger.warning("同步执行后仍存在未同步项，请检查输入文件格式")
+        return code
+
+    logger.info("同步完成")
+    return code
+
+
+def _cmd_multi_write(args) -> int:
+    """多 Agent 编排写章节"""
+    import asyncio
+
+    project_root = Path.cwd()
+    config = _load_config(project_root)
+    if not config:
+        logger.error("未找到 novel_config.yaml，请先运行 openwrite init")
+        return 1
+
+    novel_id = config.get("novel_id", "unknown")
+    style_id = config.get("style_id", novel_id)
+    chapter = args.chapter
+    if chapter == "next":
+        chapter = _get_next_chapter(project_root, novel_id)
+
+    logger.info(f"多 Agent 写章节: {chapter}")
+
+    async def do_multi_write():
+        try:
+            from tools.llm import LLMClient, LLMConfig
+            from tools.agent import AgentContext, MultiAgentDirector
+
+            llm_config = LLMConfig.from_env()
+            client = LLMClient(llm_config)
+            agent_ctx = AgentContext(client, llm_config.model, str(project_root))
+            director = MultiAgentDirector(agent_ctx, novel_id=novel_id, style_id=style_id)
+
+            if args.show_packet:
+                packet = director.assemble_packet(chapter)
+                packet_dir = (
+                    Path(args.packet_output_dir)
+                    if args.packet_output_dir
+                    else _get_test_output_dir(project_root, novel_id, "multi_write")
+                )
+                packet_dir.mkdir(parents=True, exist_ok=True)
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                packet_path = packet_dir / f"{chapter}_packet_{stamp}.md"
+                packet_path.write_text(packet.to_markdown(), encoding="utf-8")
+                logger.info(f"组装包快照: {packet_path}")
+                print(packet.to_markdown())
+
+            result = await director.run(
+                chapter_id=chapter,
+                temperature=args.temperature,
+                run_review=not args.no_review,
+            )
+
+            if not result.draft:
+                logger.error("写作失败：未生成草稿")
+                return 1
+
+            _save_chapter(
+                project_root,
+                novel_id,
+                chapter,
+                result.draft.title,
+                result.draft.content,
+            )
+            logger.info(f"章节已保存: {chapter}")
+
+            if result.review:
+                logger.info(f"审查得分: {result.review.score:.0f}/100")
+                logger.info(f"审查问题数: {len(result.review.issues)}")
+
+            if result.applied_state_updates:
+                logger.info(f"已更新状态文件: {', '.join(result.applied_state_updates.keys())}")
+
+            if result.new_concepts:
+                logger.info(f"已新增概念文档: {', '.join(result.new_concepts)}")
+
+            return 0
+
+        except ImportError as e:
+            logger.warning(f"LLM 模块未安装或配置: {e}")
+            logger.info("提示: 设置环境变量 LLM_API_KEY, LLM_MODEL 等")
+            return 1
+
+    return asyncio.run(do_multi_write())
 
 
 def _cmd_review(args) -> int:
@@ -333,6 +562,60 @@ def _cmd_context(args) -> int:
         logger.info(f"上下文 ({len(sections)} 个段落):")
         for name in sections:
             logger.info(f"  - {name}")
+
+    return 0
+
+
+def _cmd_assemble(args) -> int:
+    """按 V2 规则组装章节上下文包"""
+    import json
+    from dataclasses import asdict
+
+    from tools.chapter_assembler import ChapterAssemblerV2
+
+    project_root = Path.cwd()
+    config = _load_config(project_root)
+    if not config:
+        logger.error("未找到 novel_config.yaml")
+        return 1
+
+    novel_id = config.get("novel_id", "unknown")
+    style_id = config.get("style_id", novel_id)
+    chapter = args.chapter
+
+    if chapter == "next":
+        chapter = _get_next_chapter(project_root, novel_id)
+
+    assembler = ChapterAssemblerV2(project_root, novel_id, style_id=style_id)
+    packet = assembler.assemble(chapter)
+
+    if args.format == "json":
+        rendered = json.dumps(asdict(packet), ensure_ascii=False, indent=2)
+        ext = "json"
+    else:
+        rendered = packet.to_markdown()
+        ext = "md"
+
+    # 为调试/验收固定保存一份上下文快照，便于回看组装效果。
+    target_dir = (
+        Path(args.output_dir)
+        if args.output_dir
+        else _get_test_output_dir(project_root, novel_id, "context_packets")
+    )
+    target_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snapshot_path = target_dir / f"{chapter}_{stamp}.{ext}"
+    snapshot_path.write_text(rendered, encoding="utf-8")
+    logger.info(f"组装结果快照: {snapshot_path}")
+
+    if args.output:
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
+        logger.info(f"组装结果已输出: {output_path}")
+
+    if not args.no_print and not args.output:
+        print(rendered)
 
     return 0
 
@@ -545,10 +828,8 @@ def _cmd_status(args) -> int:
     logger.info(f"当前章: {config.get('current_chapter', 'N/A')}")
 
     truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
-
-    summary_lines = truth.chapter_summaries.count("## 第")
-    logger.info(f"已写章节: {summary_lines}")
+    chapter_count = len(_list_chapter_ids(project_root, novel_id))
+    logger.info(f"已写章节: {chapter_count}")
 
     snapshots = truth_manager.list_snapshots()
     logger.info(f"快照数: {len(snapshots)}")
@@ -556,99 +837,109 @@ def _cmd_status(args) -> int:
     return 0
 
 
-def _cmd_agent(args) -> int:
-    """使用 ReAct Agent"""
-    import asyncio
-
+def _cmd_doctor(args) -> int:
+    """环境与路径自检"""
     project_root = Path.cwd()
+    config = _load_config(project_root)
+    if not config:
+        logger.error("未找到 novel_config.yaml")
+        return 1
 
-    async def do_agent():
-        try:
-            from tools.llm import LLMClient, LLMConfig
-            from tools.agent import ReActAgent, OPENWRITE_TOOLS, OPENWRITE_SYSTEM_PROMPT
+    novel_id = config.get("novel_id", "unknown")
+    novel_root = project_root / "data" / "novels" / novel_id
+    src_root = novel_root / "src"
+    runtime_root = novel_root / "data"
+    packet_dir = _get_test_output_dir(project_root, novel_id, "context_packets")
 
-            llm_config = LLMConfig.from_env()
-            client = LLMClient(llm_config)
+    logger.info(f"工作目录: {project_root}")
+    logger.info(f"小说 ID: {novel_id}")
+    logger.info(f"源目录: {src_root} ({'存在' if src_root.exists() else '缺失'})")
+    logger.info(f"运行目录: {runtime_root} ({'存在' if runtime_root.exists() else '缺失'})")
+    logger.info(f"测试输出目录: {packet_dir}")
 
-            agent = ReActAgent(
-                client=client,
-                model=llm_config.model,
-                tools=OPENWRITE_TOOLS,
-                system_prompt=OPENWRITE_SYSTEM_PROMPT,
-                max_turns=args.max_turns,
-            )
+    model = (os.environ.get("LLM_MODEL") or "").strip()
+    provider = (os.environ.get("LLM_PROVIDER") or "").strip()
+    api_key = (os.environ.get("LLM_API_KEY") or "").strip()
+    masked = "<missing>"
+    if api_key:
+        masked = f"{api_key[:4]}...{api_key[-4:]}" if len(api_key) > 8 else "***"
 
-            # 注册工具执行器
-            agent._register_tool_executors(
-                {
-                    # 写作相关
-                    "write_chapter": lambda a: _exec_write_chapter(project_root, a),
-                    "review_chapter": lambda a: _exec_review_chapter(project_root, a),
-                    "get_status": lambda a: _exec_get_status(project_root),
-                    "get_context": lambda a: _exec_get_context(project_root, a),
-                    "list_chapters": lambda a: _exec_list_chapters(project_root),
-                    "create_outline": lambda a: _exec_create_outline(project_root, a),
-                    "create_character": lambda a: _exec_create_character(project_root, a),
-                    "get_truth_files": lambda a: _exec_get_truth_files(project_root),
-                    "update_truth_file": lambda a: _exec_update_truth_file(project_root, a),
-                    # 伏笔管理
-                    "create_foreshadowing": lambda a: _exec_create_foreshadowing(project_root, a),
-                    "list_foreshadowing": lambda a: _exec_list_foreshadowing(project_root, a),
-                    "update_foreshadowing": lambda a: _exec_update_foreshadowing(project_root, a),
-                    "validate_foreshadowing": lambda a: _exec_validate_foreshadowing(
-                        project_root, a
-                    ),
-                    # 世界查询
-                    "query_world": lambda a: _exec_query_world(project_root, a),
-                    "get_world_relations": lambda a: _exec_get_world_relations(project_root, a),
-                    # 状态验证
-                    "validate_truth": lambda a: _exec_validate_truth(project_root, a),
-                    # 对话质量
-                    "extract_dialogue_fingerprint": lambda a: _exec_extract_dialogue_fingerprint(
-                        project_root, a
-                    ),
-                    # 后置验证
-                    "validate_post_write": lambda a: _exec_validate_post_write(project_root, a),
-                    # 工作流
-                    "get_workflow_status": lambda a: _exec_get_workflow_status(project_root, a),
-                    "start_workflow": lambda a: _exec_start_workflow(project_root, a),
-                    "advance_workflow": lambda a: _exec_advance_workflow(project_root, a),
-                    # 文本处理
-                    "chunk_text": lambda a: _exec_chunk_text(project_root, a),
-                    "compress_section": lambda a: _exec_compress_section(project_root, a),
-                }
-            )
+    logger.info(f"LLM_PROVIDER: {provider or '<missing>'}")
+    logger.info(f"LLM_MODEL: {model or '<missing>'}")
+    logger.info(f"LLM_API_KEY: {masked}")
 
-            def on_tool_call(name: str, args_: dict):
-                if not args.quiet:
-                    print(f"  [tool] {name}({args_})")
+    return 0
 
-            def on_tool_result(name: str, result: str):
-                if not args.quiet:
-                    preview = result[:200] + "..." if len(result) > 200 else result
-                    print(f"  [result] {preview}")
 
-            def on_message(content: str):
-                print(f"\n{content}\n")
+def _cmd_agent(args) -> int:
+    """使用确定性 Orchestrator"""
+    project_root = Path.cwd()
+    config = _load_config(project_root)
+    if not config:
+        logger.error("未找到 novel_config.yaml，请先运行 openwrite init")
+        return 1
 
-            result = await agent.run(
-                instruction=args.instruction,
-                on_tool_call=on_tool_call if not args.quiet else None,
-                on_tool_result=on_tool_result if not args.quiet else None,
-                on_message=on_message,
-            )
+    novel_id = config.get("novel_id") or "current"
 
-            return 0
+    try:
+        from tools.agent.orchestrator import OpenWriteOrchestrator
+        from tools.agent.tool_runtime import build_tool_executors
 
-        except ImportError as e:
-            logger.error(f"LLM 模块未安装: {e}")
-            logger.info("设置环境变量: LLM_API_KEY, LLM_MODEL")
-            return 1
-        except Exception as e:
-            logger.error(f"Agent 执行失败: {e}")
-            return 1
+        orchestrator = OpenWriteOrchestrator(
+            project_root=project_root,
+            novel_id=novel_id,
+            tool_executors=build_tool_executors(project_root),
+        )
+        return orchestrator.run_cli(
+            instruction=args.instruction,
+            quiet=args.quiet,
+            max_turns=args.max_turns,
+        )
+    except ImportError as e:
+        logger.error(f"Agent 模块未安装: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"Agent 执行失败: {e}")
+        return 1
 
-    return asyncio.run(do_agent())
+
+def build_cli_tool_executors(project_root: Path) -> dict[str, Callable[[dict], dict]]:
+    """构建 CLI 工具执行器映射（公开 API）。"""
+    return {
+        # 写作相关
+        "write_chapter": lambda a: _exec_write_chapter(project_root, a),
+        "review_chapter": lambda a: _exec_review_chapter(project_root, a),
+        "get_status": lambda a: _exec_get_status(project_root),
+        "get_context": lambda a: _exec_get_context(project_root, a),
+        "list_chapters": lambda a: _exec_list_chapters(project_root),
+        "create_outline": lambda a: _exec_create_outline(project_root, a),
+        "create_character": lambda a: _exec_create_character(project_root, a),
+        "get_truth_files": lambda a: _exec_get_truth_files(project_root),
+        "update_truth_file": lambda a: _exec_update_truth_file(project_root, a),
+        # 伏笔管理
+        "create_foreshadowing": lambda a: _exec_create_foreshadowing(project_root, a),
+        "list_foreshadowing": lambda a: _exec_list_foreshadowing(project_root, a),
+        "update_foreshadowing": lambda a: _exec_update_foreshadowing(project_root, a),
+        "validate_foreshadowing": lambda a: _exec_validate_foreshadowing(project_root, a),
+        # 世界查询
+        "query_world": lambda a: _exec_query_world(project_root, a),
+        "get_world_relations": lambda a: _exec_get_world_relations(project_root, a),
+        # 状态验证
+        "validate_truth": lambda a: _exec_validate_truth(project_root, a),
+        # 对话质量
+        "extract_dialogue_fingerprint": lambda a: _exec_extract_dialogue_fingerprint(
+            project_root, a
+        ),
+        # 后置验证
+        "validate_post_write": lambda a: _exec_validate_post_write(project_root, a),
+        # 工作流
+        "get_workflow_status": lambda a: _exec_get_workflow_status(project_root, a),
+        "start_workflow": lambda a: _exec_start_workflow(project_root, a),
+        "advance_workflow": lambda a: _exec_advance_workflow(project_root, a),
+        # 文本处理
+        "chunk_text": lambda a: _exec_chunk_text(project_root, a),
+        "compress_section": lambda a: _exec_compress_section(project_root, a),
+    }
 
 
 def _exec_write_chapter(project_root: Path, args: dict) -> dict:
@@ -666,6 +957,10 @@ def _exec_write_chapter(project_root: Path, args: dict) -> dict:
 
     builder = ContextBuilder(project_root, novel_id)
     context = builder.build_generation_context(chapter_id)
+    from tools.truth_manager import TruthFilesManager
+
+    truth_manager = TruthFilesManager(project_root, novel_id)
+    truth = truth_manager.load_truth_files()
 
     try:
         llm_config = LLMConfig.from_env()
@@ -677,25 +972,32 @@ def _exec_write_chapter(project_root: Path, args: dict) -> dict:
 
         result = asyncio.run(
             writer.write_chapter(
-                context={
-                    "target_words": context.target_words,
-                    "chapter_goals": context.chapter_goals,
-                    "current_state": context.current_state,
-                    "pending_hooks": context.pending_hooks,
-                },
+                context=normalize_context_payload(
+                    {
+                        "target_words": getattr(context, "target_words", 0),
+                        "chapter_goals": getattr(context, "chapter_goals", []),
+                        "current_state": getattr(context, "current_state", ""),
+                        "foreshadowing_summary": getattr(context, "foreshadowing_summary", ""),
+                        "ledger": getattr(context, "ledger", ""),
+                        "relationships": truth.relationships,
+                    },
+                    include_aliases=True,
+                ),
                 chapter_number=chapter_num,
             )
         )
 
-        _save_chapter(project_root, novel_id, chapter_id, result.title, result.content)
+        draft_path = _save_chapter(project_root, novel_id, chapter_id, result.title, result.content)
 
         return {
+            "ok": True,
             "chapter_id": chapter_id,
             "title": result.title,
             "word_count": result.word_count,
+            "draft_path": str(draft_path),
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"ok": False, "chapter_id": chapter_id, "error": str(e)}
 
 
 def _exec_review_chapter(project_root: Path, args: dict) -> dict:
@@ -743,16 +1045,14 @@ def _exec_get_status(project_root: Path) -> dict:
     from tools.truth_manager import TruthFilesManager
 
     truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
-
-    summary_lines = truth.chapter_summaries.count("## 第")
+    chapter_ids = _list_chapter_ids(project_root, novel_id)
     snapshots = truth_manager.list_snapshots()
 
     return {
         "novel_id": novel_id,
         "current_arc": config.get("current_arc"),
         "current_chapter": config.get("current_chapter"),
-        "chapters_written": summary_lines,
+        "chapters_written": len(chapter_ids),
         "snapshots": len(snapshots),
     }
 
@@ -786,19 +1086,22 @@ def _exec_list_chapters(project_root: Path) -> dict:
     if not config:
         return {"error": "未找到项目配置"}
 
-    from tools.truth_manager import TruthFilesManager
-
     novel_id = config.get("novel_id", "")
-    truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
+    manuscript_root = project_root / "data" / "novels" / novel_id / "data" / "manuscript"
 
-    import re
+    chapters = []
+    for chapter_id in sorted(_list_chapter_ids(project_root, novel_id), key=_parse_chapter_no):
+        title = ""
+        for p in sorted(manuscript_root.glob(f"**/{chapter_id}*.md")):
+            text = _load_text_file(p)
+            if text:
+                first = text.splitlines()[0].strip() if text.splitlines() else ""
+                if first.startswith("# "):
+                    title = first[2:].strip()
+                break
+        chapters.append({"number": _parse_chapter_no(chapter_id), "chapter_id": chapter_id, "title": title})
 
-    chapters = re.findall(r"## 第(\d+)章\s+(.+)", truth.chapter_summaries)
-
-    return {
-        "chapters": [{"number": n, "title": t} for n, t in chapters],
-    }
+    return {"chapters": chapters}
 
 
 def _exec_create_outline(project_root: Path, args: dict) -> dict:
@@ -810,7 +1113,7 @@ def _exec_create_outline(project_root: Path, args: dict) -> dict:
     novel_id = config.get("novel_id", "")
     content = args.get("outline_content", "")
 
-    outline_dir = project_root / "data" / "novels" / novel_id / "outline"
+    outline_dir = project_root / "data" / "novels" / novel_id / "src"
     outline_dir.mkdir(parents=True, exist_ok=True)
 
     outline_file = outline_dir / "outline.md"
@@ -829,13 +1132,17 @@ def _exec_create_character(project_root: Path, args: dict) -> dict:
     name = args.get("name", "")
     description = args.get("description", "")
 
-    char_dir = project_root / "data" / "novels" / novel_id / "characters" / "profiles"
+    char_dir = project_root / "data" / "novels" / novel_id / "src" / "characters"
     char_dir.mkdir(parents=True, exist_ok=True)
 
-    char_file = char_dir / f"{name}.md"
+    safe_name = _safe_stem(name)
+    if not safe_name:
+        return {"error": "角色名无效，不能包含路径分隔符或仅由特殊字符组成"}
+
+    char_file = char_dir / f"{safe_name}.md"
     char_file.write_text(f"# {name}\n\n{description}", encoding="utf-8")
 
-    return {"file": str(char_file), "name": name}
+    return {"file": str(char_file), "name": name, "safe_name": safe_name}
 
 
 def _exec_get_truth_files(project_root: Path) -> dict:
@@ -850,10 +1157,14 @@ def _exec_get_truth_files(project_root: Path) -> dict:
     truth_manager = TruthFilesManager(project_root, novel_id)
     truth = truth_manager.load_truth_files()
 
+    current_state = truth.current_state[:500] if truth.current_state else ""
+    ledger = truth.ledger[:500] if truth.ledger else ""
+    relationships = truth.relationships[:500] if truth.relationships else ""
+
     return {
-        "current_state": truth.current_state[:500] if truth.current_state else "",
-        "pending_hooks": truth.pending_hooks[:500] if truth.pending_hooks else "",
-        "chapter_summaries": truth.chapter_summaries[:500] if truth.chapter_summaries else "",
+        "current_state": current_state,
+        "ledger": ledger,
+        "relationships": relationships,
     }
 
 
@@ -872,21 +1183,149 @@ def _exec_update_truth_file(project_root: Path, args: dict) -> dict:
     truth_manager = TruthFilesManager(project_root, novel_id)
     truth = truth_manager.load_truth_files()
 
+    canonical = normalize_truth_file_key(file_name)
     file_map = {
         "current_state": "current_state",
-        "pending_hooks": "pending_hooks",
-        "particle_ledger": "particle_ledger",
-        "chapter_summaries": "chapter_summaries",
+        "ledger": "ledger",
+        "relationships": "relationships",
     }
 
-    attr = file_map.get(file_name)
+    attr = file_map.get(canonical)
     if not attr:
         return {"error": f"Unknown file: {file_name}"}
 
     setattr(truth, attr, content)
     truth_manager.save_truth_files(truth)
 
-    return {"file": file_name, "size": len(content)}
+    return {"file": canonical, "size": len(content)}
+
+
+def _load_text_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _safe_stem(value: str) -> str:
+    """将用户输入规范化为安全文件名（不含路径成分）。"""
+    text = (value or "").strip()
+    # 拦截显式路径成分与目录跳转。
+    if any(x in text for x in ("/", "\\")) or ".." in text:
+        return ""
+    # 允许中文、字母数字、下划线、中划线，空白转下划线。
+    text = re.sub(r"\s+", "_", text)
+    text = re.sub(r"[^0-9A-Za-z_\-\u4e00-\u9fff]", "", text)
+    return text[:64]
+
+
+def _collect_truth_updates(state_updates: dict) -> dict[str, str]:
+    """从 Agent 结算输出中提取可落盘的真相字段。"""
+    if not isinstance(state_updates, dict):
+        return {}
+
+    file_map = {
+        "current_state": "current_state",
+        "ledger": "ledger",
+        "relationships": "relationships",
+    }
+    out: dict[str, str] = {}
+
+    for key, value in state_updates.items():
+        if not isinstance(value, str) or not value.strip():
+            continue
+        canonical = normalize_truth_file_key(key)
+        attr = file_map.get(canonical)
+        if attr:
+            out[attr] = value
+
+    return out
+
+
+def _collect_sync_status(project_root: Path, novel_id: str) -> dict:
+    """收集 src/data 同步状态。"""
+    return _shared_collect_sync_status(project_root, novel_id)
+
+
+def _print_sync_status(status: dict) -> None:
+    logger.info(f"同步检查: {status['novel_id']}")
+    logger.info(f"  大纲同步待处理: {'是' if status['outline_pending'] else '否'}")
+    logger.info(f"  角色档案/卡片: {status['profiles']}/{status['cards']}")
+    if status["missing_cards"]:
+        logger.info(f"  缺失卡片: {', '.join(status['missing_cards'])}")
+    if status.get("stale_cards"):
+        logger.info(f"  过期卡片: {', '.join(status['stale_cards'])}")
+    if status["extra_cards"]:
+        logger.info(f"  额外卡片(可选清理): {', '.join(status['extra_cards'])}")
+
+
+def _build_sync_suggestions(status: dict) -> list[str]:
+    """根据同步状态生成下一步建议。"""
+    messages: list[str] = []
+
+    if status["outline_pending"]:
+        messages.append("大纲源文件有更新，运行 `openwrite sync` 以刷新 data/hierarchy.yaml")
+
+    if status["missing_cards"]:
+        preview = ", ".join(status["missing_cards"][:5])
+        messages.append(
+            f"存在缺失角色卡片（{preview}），运行 `openwrite sync` 生成 data/characters/cards/*.yaml"
+        )
+
+    if status.get("stale_cards"):
+        preview = ", ".join(status["stale_cards"][:5])
+        messages.append(
+            f"存在过期角色卡片（{preview}），运行 `openwrite sync` 刷新 data/characters/cards/*.yaml"
+        )
+
+    if status["extra_cards"]:
+        preview = ", ".join(status["extra_cards"][:5])
+        messages.append(f"检测到未对应的历史角色卡片（{preview}），可按需手工清理")
+
+    if not messages:
+        messages.append("src 与 data 同步状态良好，可直接继续写作")
+
+    return messages
+
+
+def _build_sync_actions(status: dict) -> list[dict[str, str]]:
+    """根据同步状态生成可执行动作列表（供 JSON 输出）。"""
+    actions: list[dict[str, str]] = []
+
+    if status["outline_pending"] or status["missing_cards"] or status.get("stale_cards"):
+        actions.append(
+            {
+                "type": "command",
+                "name": "run_sync",
+                "command": "openwrite sync",
+                "reason": "将 src 的 outline/characters 同步到 data",
+            }
+        )
+
+    if status["extra_cards"]:
+        actions.append(
+            {
+                "type": "manual",
+                "name": "review_extra_cards",
+                "reason": "存在未对应档案的历史卡片，按需清理 data/characters/cards/*.yaml",
+            }
+        )
+
+    if not actions:
+        actions.append(
+            {
+                "type": "noop",
+                "name": "continue_writing",
+                "reason": "src 与 data 已同步，可直接继续写作流程",
+            }
+        )
+
+    return actions
+
+
+def _run_sync(project_root: Path, novel_id: str) -> None:
+    """执行 src -> data 同步。"""
+    _shared_run_sync(project_root, novel_id)
 
 
 def _exec_create_foreshadowing(project_root: Path, args: dict) -> dict:
@@ -1031,13 +1470,53 @@ def _load_config(project_root: Path) -> Optional[dict]:
         return yaml.safe_load(f)
 
 
+def _get_test_output_dir(project_root: Path, novel_id: str, category: str) -> Path:
+    """获取测试输出目录。"""
+    return project_root / "data" / "novels" / novel_id / "data" / "test_outputs" / category
+
+
+def _count_written_chapters(project_root: Path, novel_id: str) -> int:
+    """统计当前布局下的最终章节数。"""
+    return len(_iter_final_chapter_paths(project_root, novel_id))
+
+
+def _iter_final_chapter_paths(project_root: Path, novel_id: str) -> list[Path]:
+    """列出当前篇下的最终章节文件，忽略 draft。"""
+    manuscript_dir = _manuscript_dir(project_root, novel_id) / _get_current_arc(project_root)
+    if not manuscript_dir.exists():
+        return []
+
+    chapter_pattern = re.compile(r"^ch_\d+\.md$")
+    return sorted(
+        path
+        for path in manuscript_dir.rglob("*.md")
+        if path.is_file() and chapter_pattern.fullmatch(path.name)
+    )
+
+
+def _get_current_arc(project_root: Path) -> str:
+    """读取当前篇章目录，默认回退到 arc_001。"""
+    config = _load_config(project_root) or {}
+    return config.get("current_arc") or "arc_001"
+
+
+def _manuscript_dir(project_root: Path, novel_id: str) -> Path:
+    """获取当前支持的手稿根目录。"""
+    return project_root / "data" / "novels" / novel_id / "data" / "manuscript"
+
+
 def _load_chapter(project_root: Path, novel_id: str, chapter_id: str) -> Optional[str]:
     """加载章节内容"""
-    manuscript_dir = project_root / "data" / "novels" / novel_id / "manuscript"
+    manuscript_dir = _manuscript_dir(project_root, novel_id)
+    current_arc = _get_current_arc(project_root)
+
+    current_path = manuscript_dir / current_arc / f"{chapter_id}.md"
+    if current_path.is_file():
+        return current_path.read_text(encoding="utf-8")
 
     patterns = [
-        f"{chapter_id}.md",
-        f"{chapter_id}_*.md",
+        f"**/{chapter_id}.md",
+        f"**/{chapter_id}_*.md",
     ]
 
     for pattern in patterns:
@@ -1056,7 +1535,18 @@ def _save_chapter(
     content: str,
 ) -> Path:
     """保存章节"""
-    manuscript_dir = project_root / "data" / "novels" / novel_id / "manuscript"
+    config = _load_config(project_root) or {}
+    current_arc = config.get("current_arc", "arc_001")
+
+    manuscript_dir = (
+        project_root
+        / "data"
+        / "novels"
+        / novel_id
+        / "data"
+        / "manuscript"
+        / current_arc
+    )
     manuscript_dir.mkdir(parents=True, exist_ok=True)
 
     file_path = manuscript_dir / f"{chapter_id}.md"
@@ -1067,26 +1557,39 @@ def _save_chapter(
 
 def _get_next_chapter(project_root: Path, novel_id: str) -> str:
     """获取下一个章节 ID"""
-    truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
-
-    existing = truth.chapter_summaries.count("## 第")
-    return f"ch_{existing + 1:03d}"
+    chapter_ids = _list_chapter_ids(project_root, novel_id)
+    if not chapter_ids:
+        return "ch_001"
+    latest = max(_parse_chapter_no(chid) for chid in chapter_ids)
+    return f"ch_{latest + 1:03d}"
 
 
 def _get_latest_chapter(project_root: Path, novel_id: str) -> str:
     """获取最新章节"""
-    truth_manager = TruthFilesManager(project_root, novel_id)
-    truth = truth_manager.load_truth_files()
+    chapter_ids = _list_chapter_ids(project_root, novel_id)
+    if not chapter_ids:
+        return "ch_001"
+    latest_id = max(chapter_ids, key=_parse_chapter_no)
+    return latest_id
 
-    import re
 
-    matches = re.findall(r"## 第(\d+)章", truth.chapter_summaries)
-    if matches:
-        latest = max(int(m) for m in matches)
-        return f"ch_{latest:03d}"
+def _list_chapter_ids(project_root: Path, novel_id: str) -> list[str]:
+    """从手稿目录扫描章节 ID。"""
+    manuscript_root = project_root / "data" / "novels" / novel_id / "data" / "manuscript"
+    if not manuscript_root.exists():
+        return []
 
-    return "ch_001"
+    chapter_ids: set[str] = set()
+    for path in manuscript_root.glob("**/ch_*.md"):
+        stem = path.stem
+        if re.match(r"^ch_\d+$", stem):
+            chapter_ids.add(stem)
+    return sorted(chapter_ids, key=_parse_chapter_no)
+
+
+def _parse_chapter_no(chapter_id: str) -> int:
+    m = re.search(r"(\d+)", chapter_id)
+    return int(m.group(1)) if m else 0
 
 
 # ── 世界查询 ────────────────────────────────────────────────

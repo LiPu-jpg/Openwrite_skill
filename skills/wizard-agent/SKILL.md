@@ -129,7 +129,7 @@ inspiration/
 
 当用户选择参考后，风格文件会自动生成到：
 ```
-data/novels/{novel_id}/style/composed.md
+data/novels/{novel_id}/data/style/composed.md
 ```
 
 ---

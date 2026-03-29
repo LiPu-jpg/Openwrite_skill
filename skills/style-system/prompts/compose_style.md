@@ -6,7 +6,7 @@
 
 1. **通用技法层** (craft/) - 可选参考
 2. **参考风格层** (data/reference_styles/{参考作品}/) - 核心约束
-3. **作品设定层** (data/novels/{id}/characters/ + world/) - 硬性约束
+3. **作品设定层** (data/novels/{id}/src/characters/ + src/world/) - 硬性约束
 4. **用户覆盖** - 最高优先级
 
 ## 合成优先级
@@ -51,7 +51,7 @@
 
 ## 1. 硬性约束（不可违反）
 
-> 来源：data/novels/{id}/characters/ + world/
+> 来源：data/novels/{id}/src/characters/ + src/world/
 
 ### 1.1 角色一致性
 {角色相关约束}
@@ -137,9 +137,9 @@
 
 ## 附录：来源文件
 
-- 作品设定：data/novels/{id}/characters/*.yaml + world/entities/*.md
+- 作品设定：data/novels/{id}/src/characters/*.md + src/world/entities/*.md
 - 参考风格：data/reference_styles/{参考作品}/*.md
-- 风格指纹：data/novels/{id}/style/fingerprint.yaml
+- 风格指纹：data/novels/{id}/data/style/fingerprint.yaml
 - 通用技法：craft/*.md
 - 文本人化：craft/humanization.yaml
 ```

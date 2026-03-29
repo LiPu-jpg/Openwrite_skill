@@ -1,3 +1,10 @@
++++
+id = "ledger"
+type = "runtime_truth"
+summary = "陈明掌握的术法资源仍然微弱，但职场资源与暴露风险都在同步增长。"
+detail_refs = ["resources", "constraints", "balances"]
++++
+
 # 资源账本
 
 ## 术法资源

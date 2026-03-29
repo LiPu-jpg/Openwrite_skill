@@ -1,9 +1,9 @@
 """真相文件管理器
 
-管理 3 个运行时状态文件（已融合到对应模块）：
+管理 3 个运行时状态文件：
 1. world/current_state.md - 世界当前状态
 2. world/ledger.md - 资源账本
-3. characters/relationships.md - 角色关系矩阵
+3. world/relationships.md - 角色关系矩阵
 
 注意：
 - 章节摘要 → outline/hierarchy.yaml + compressed/
@@ -23,6 +23,8 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from .frontmatter import compose_toml_document, parse_toml_front_matter, strip_front_matter_padding
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,8 +33,30 @@ class TruthFiles:
     """真相文件集合（精简版）"""
 
     current_state: str = ""
-    particle_ledger: str = ""
-    character_matrix: str = ""
+    ledger: str = ""
+    relationships: str = ""
+    metadata: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+    _ALIASES = {
+        "particle_ledger": "ledger",
+        "character_matrix": "relationships",
+    }
+
+    def __getattr__(self, name: str) -> str:
+        alias = self._ALIASES.get(name)
+        if alias:
+            return getattr(self, alias)
+        raise AttributeError(name)
+
+    def __setattr__(self, name: str, value: str) -> None:
+        alias = self._ALIASES.get(name)
+        if alias:
+            super().__setattr__(alias, value)
+            return
+        super().__setattr__(name, value)
+
+    def __dir__(self) -> List[str]:
+        return [item for item in super().__dir__() if item != "metadata"]
 
 
 @dataclass
@@ -51,7 +75,7 @@ class TruthFilesManager:
     文件分布：
     - world/current_state.md - 世界当前状态
     - world/ledger.md - 资源账本
-    - characters/relationships.md - 角色关系矩阵
+    - world/relationships.md - 角色关系矩阵
 
     用法:
         manager = TruthFilesManager(project_root, novel_id)
@@ -73,45 +97,50 @@ class TruthFilesManager:
 
     TRUTH_FILES = {
         "current_state": "current_state.md",
-        "particle_ledger": "ledger.md",
-        "character_matrix": "relationships.md",
+        "ledger": "ledger.md",
+        "relationships": "relationships.md",
     }
 
     def __init__(self, project_root: Path, novel_id: str):
         self.project_root = project_root.resolve()
         self.novel_id = novel_id
-        self.world_dir = project_root / "data" / "novels" / novel_id / "world"
-        self.characters_dir = project_root / "data" / "novels" / novel_id / "characters"
-        self.snapshots_dir = project_root / "data" / "novels" / novel_id / "snapshots"
+        self.novel_root = project_root / "data" / "novels" / novel_id
+        self.runtime_root = self.novel_root / "data"
+        self.world_dir = self.runtime_root / "world"
+        self.snapshots_dir = self.runtime_root / "snapshots"
 
     def _get_file_path(self, attr_name: str) -> Path:
         """获取文件路径"""
         if attr_name == "current_state":
             return self.world_dir / "current_state.md"
-        elif attr_name == "particle_ledger":
+        elif attr_name in ("ledger", "particle_ledger"):
             return self.world_dir / "ledger.md"
-        elif attr_name == "character_matrix":
-            return self.characters_dir / "relationships.md"
+        elif attr_name in ("relationships", "character_matrix"):
+            return self.world_dir / "relationships.md"
         raise ValueError(f"Unknown truth file: {attr_name}")
 
     def ensure_dirs(self):
         """确保目录存在"""
         self.world_dir.mkdir(parents=True, exist_ok=True)
-        self.characters_dir.mkdir(parents=True, exist_ok=True)
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
 
     def load_truth_files(self) -> TruthFiles:
         """加载所有真相文件"""
         truth = TruthFiles()
 
-        for attr_name in ["current_state", "particle_ledger", "character_matrix"]:
+        for attr_name in ["current_state", "ledger", "relationships"]:
             file_path = self._get_file_path(attr_name)
             if file_path.exists():
                 try:
                     content = file_path.read_text(encoding="utf-8")
-                    setattr(truth, attr_name, content)
+                    meta, body = parse_toml_front_matter(content)
+                    clean_body = strip_front_matter_padding(body if meta else content)
+                    truth.metadata[attr_name] = meta or self._default_metadata(attr_name, clean_body)
+                    setattr(truth, attr_name, clean_body)
                 except Exception as e:
                     logger.warning(f"Failed to load {attr_name}: {e}")
+            else:
+                truth.metadata[attr_name] = self._default_metadata(attr_name, "")
 
         return truth
 
@@ -119,11 +148,13 @@ class TruthFilesManager:
         """保存所有真相文件"""
         self.ensure_dirs()
 
-        for attr_name in ["current_state", "particle_ledger", "character_matrix"]:
+        for attr_name in ["current_state", "ledger", "relationships"]:
             content = getattr(truth, attr_name, "")
             file_path = self._get_file_path(attr_name)
             try:
-                file_path.write_text(content, encoding="utf-8")
+                meta = truth.metadata.get(attr_name) or self._default_metadata(attr_name, content)
+                truth.metadata[attr_name] = meta
+                file_path.write_text(compose_toml_document(meta, content), encoding="utf-8")
             except Exception as e:
                 logger.warning(f"Failed to save {attr_name}: {e}")
 
@@ -154,8 +185,8 @@ class TruthFilesManager:
             "created_at": datetime.now().isoformat(),
             "files": {
                 "current_state": truth.current_state,
-                "particle_ledger": truth.particle_ledger,
-                "character_matrix": truth.character_matrix,
+                "ledger": truth.ledger,
+                "relationships": truth.relationships,
             },
         }
 
@@ -182,8 +213,10 @@ class TruthFilesManager:
 
             truth = TruthFiles(
                 current_state=snapshot["files"].get("current_state", ""),
-                particle_ledger=snapshot["files"].get("particle_ledger", ""),
-                character_matrix=snapshot["files"].get("character_matrix", ""),
+                ledger=snapshot["files"].get("ledger", snapshot["files"].get("particle_ledger", "")),
+                relationships=snapshot["files"].get(
+                    "relationships", snapshot["files"].get("character_matrix", "")
+                ),
             )
 
             self.save_truth_files(truth)
@@ -223,7 +256,7 @@ class TruthFilesManager:
         pov_character: str,
         chapter_summaries: str,
     ) -> str:
-        """POV 感知过滤伏笔（融合 InkOS pov-filter.ts）
+        """POV 感知过滤伏笔
 
         只返回 POV 角色应该知道的伏笔。
         """
@@ -245,6 +278,32 @@ class TruthFilesManager:
                 filtered.append(line)
 
         return "\n".join(filtered) if filtered else hooks
+
+    def _default_metadata(self, attr_name: str, content: str) -> Dict[str, Any]:
+        detail_map = {
+            "current_state": ["scene", "actors", "open_threads"],
+            "ledger": ["resources", "constraints", "balances"],
+            "relationships": ["bonds", "status", "goals"],
+        }
+        return {
+            "id": attr_name,
+            "type": "runtime_truth",
+            "summary": self._summarize_truth_content(content),
+            "detail_refs": detail_map.get(attr_name, ["details"]),
+        }
+
+    def _summarize_truth_content(self, content: str) -> str:
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith("#") or stripped.startswith("|"):
+                continue
+            stripped = re.sub(r"^[-*]\s*", "", stripped)
+            stripped = re.sub(r"^[^：:]+[：:]\s*", "", stripped)
+            if stripped:
+                return stripped[:160]
+        return content.strip()[:160]
 
     def _character_mentioned_in_summaries(self, character: str, summaries: str) -> bool:
         """检查角色是否在章节摘要中提及"""

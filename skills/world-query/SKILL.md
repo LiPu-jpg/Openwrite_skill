@@ -97,7 +97,7 @@ AI: 好的！我来创建一个「神秘山脉」的实体...
 
 ## 实体文件格式
 
-实体存储在 `data/novels/{novel_id}/world/entities/` 目录下：
+实体存储在 `data/novels/{novel_id}/src/world/entities/` 目录下：
 
 ```markdown
 # 神秘山脉

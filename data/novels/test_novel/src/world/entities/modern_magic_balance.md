@@ -1,6 +1,27 @@
-# 职场与修炼的荒诞平衡
++++
+id = "modern_magic_balance"
+name = "职场与修炼的荒诞平衡"
+type = "concept"
+subtype = "social_rule"
+status = "active"
+summary = "在 996 高压职场中维持术师修炼的生存策略，也是本作核心主题之一。"
+tags = ["主题", "都市", "规则", "生存策略"]
+detail_refs = ["规则", "特征", "关联"]
 
-> concept | social_rule | active
+[[related]]
+target = "shufa_system"
+kind = "depends_on"
+weight = 0.88
+note = "必须建立在术法体系存在之上"
+
+[[related]]
+target = "company"
+kind = "applies_to"
+weight = 0.84
+note = "主要发生在公司场景"
++++
+
+# 职场与修炼的荒诞平衡
 
 在996高压职场环境下维持术师修炼的生存策略，也是本作核心主题。
 核心矛盾：能力越强 → 效率越高 → 越容易暴露 → 越需要克制。

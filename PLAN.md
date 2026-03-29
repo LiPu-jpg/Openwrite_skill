@@ -254,8 +254,8 @@ tools/ 代码和 reference/openwrite_original/tools/models/ 是两套设计：
 
 - **架构修正**: 世界观从"只有实体列表"扩展为 rules + timeline + terminology + entities 四部分
 - **Bug 修复**: `context_builder._get_world_rules()` 原来读取不存在的 `world/rules.yaml` 和 `worldbuilding_rules.md`，世界观数据从未进入写作上下文 → 重写为加载 rules.md + world_query.py 实体/关系
-- 新增 `data/novels/test_novel/world/rules.md`：力量体系、社会规则、物理法则、禁忌与未知
-- 新增 `data/novels/test_novel/world/timeline.md`：关键事件时间线
-- 新增 `data/novels/test_novel/world/terminology.md`：9 个核心术语
+- 新增 `data/novels/test_novel/src/world/rules.md`：力量体系、社会规则、物理法则、禁忌与未知
+- 新增 `data/novels/test_novel/src/world/timeline.md`：关键事件时间线
+- 新增 `data/novels/test_novel/src/world/terminology.md`：9 个核心术语
 - 更新 `tools/init_project.py`：初始化时创建 rules.md / timeline.md / terminology.md 骨架
 - 更新文档：SKILL.md(v5.1) + novel-manager SKILL.md + README.md(v5.1) + PLAN.md

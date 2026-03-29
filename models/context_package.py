@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ForeshadowingState(BaseModel):
@@ -64,6 +64,8 @@ class WorldRules(BaseModel):
 class GenerationContext(BaseModel):
     """写作 AI 的完整上下文包 — 每次生成章节时由 ContextBuilder 组装"""
 
+    model_config = {"populate_by_name": True}
+
     # 基础信息
     novel_id: str = Field(default="", description="小说 ID")
     chapter_id: str = Field(default="", description="当前章节 ID")
@@ -100,11 +102,39 @@ class GenerationContext(BaseModel):
     # 最近文本
     recent_text: str = Field(default="", description="最近章节文本（用于连贯性）")
 
-    # 融合 InkOS 真相文件
+    # 真相文件
     current_state: str = Field(default="", description="世界当前状态（真相文件）")
-    pending_hooks: str = Field(default="", description="待回收伏笔列表（真相文件）")
-    particle_ledger: str = Field(default="", description="资源账本（真相文件）")
+    foreshadowing_summary: str = Field(default="", description="待回收伏笔摘要")
+    ledger: str = Field(default="", description="资源账本（真相文件）")
+    relationships: str = Field(default="", description="角色关系与动态状态（真相文件）")
     chapter_summaries: str = Field(default="", description="章节摘要列表（真相文件）")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_truth_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+
+        data = dict(value)
+        if "foreshadowing_summary" not in data and "pending_hooks" in data:
+            data["foreshadowing_summary"] = data.get("pending_hooks", "")
+        if "ledger" not in data and "particle_ledger" in data:
+            data["ledger"] = data.get("particle_ledger", "")
+        if "relationships" not in data and "character_matrix" in data:
+            data["relationships"] = data.get("character_matrix", "")
+        return data
+
+    @property
+    def pending_hooks(self) -> str:
+        return self.foreshadowing_summary
+
+    @property
+    def particle_ledger(self) -> str:
+        return self.ledger
+
+    @property
+    def character_matrix(self) -> str:
+        return self.relationships
 
     def estimate_tokens(self) -> int:
         """粗略估算总 token 数（中文约 1.5 字/token）"""

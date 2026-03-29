@@ -9,7 +9,7 @@ craft/          → 通用写作技法（跨作者跨作品的场景结构、信
 data/reference_styles/{name}/  → 作品风格指纹（这个作者/作品独有的写作习惯和偏好）
 data/novels/{id}/    → 作品设定（角色、术语、世界观规则等）
 
-注：风格文档实际路径为 `data/reference_styles/{name}/`，作品设定在 `data/novels/{novel_id}/characters/` 等。
+注：风格文档实际路径为 `data/reference_styles/{name}/`，作品设定在 `data/novels/{novel_id}/src/characters/` 与 `src/world/`。
 ```
 
 ## 输入

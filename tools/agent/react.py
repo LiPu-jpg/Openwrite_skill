@@ -111,6 +111,12 @@ class ReActAgent:
 
             response = self._chat_with_tools(messages)
 
+            if response.tool_calls:
+                assistant_msg = Message("assistant", response.content or "")
+                # 为兼容 OpenAI/兼容接口，显式保留 assistant 的 tool_calls。
+                setattr(assistant_msg, "tool_calls", response.tool_calls)
+                messages.append(assistant_msg)
+
             if response.content:
                 last_content = response.content
                 on_message and on_message(response.content)
@@ -306,7 +312,7 @@ OPENWRITE_TOOLS = [
             "properties": {
                 "file_name": {
                     "type": "string",
-                    "description": "文件名（current_state/pending_hooks/particle_ledger/chapter_summaries）",
+                    "description": "文件名（current_state/ledger/relationships）",
                 },
                 "content": {"type": "string", "description": "新内容"},
             },

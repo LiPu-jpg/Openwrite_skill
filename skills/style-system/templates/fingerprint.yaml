@@ -1,5 +1,5 @@
 # 风格指纹模板（Style Fingerprint Template）
-# 路径: data/novels/{novel_id}/style/fingerprint.yaml
+# 路径: data/novels/{novel_id}/data/style/fingerprint.yaml
 # 生成方式: 由风格初始化问询流程生成
 
 # ── 基本信息 ──────────────────────────────────────────────
@@ -33,7 +33,7 @@ references:
   #   extracted_features:
   #     - "特征1"
   #     - "特征2"
-  #   extraction_report: "data/novels/{novel_id}/style/extraction_report.yaml"
+  #   extraction_report: "data/novels/{novel_id}/data/style/extraction_report.yaml"
 
 # ── 特殊约束（Q5，可选）───────────────────────────────────
 constraints:

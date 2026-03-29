@@ -1,5 +1,5 @@
 # 角色卡片模板 (YAML格式)
-# 文件路径: data/novels/{novel_id}/characters/cards/{character_id}.yaml
+# 文件路径: data/novels/{novel_id}/data/characters/cards/{character_id}.yaml
 
 id: zhang_san                    # 唯一标识（拼音或英文）
 name: 张三                        # 角色名称

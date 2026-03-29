@@ -65,14 +65,13 @@ digraph creation_flow {
 ├── 三层风格
 │   ├── craft/ 通用技法（dialogue_craft + scene_craft + rhythm_craft + humanization）
 │   ├── data/reference_styles/{参考作品}/ 风格指纹
-│   └── data/novels/{id}/characters/ + world/ 设定约束
+│   └── data/novels/{id}/src/characters/ + src/world/ 设定约束
 ├── 世界观规则
 │   └── 相关实体和关系
 └── 真相文件（融合 InkOS）
     ├── current_state.md - 世界当前状态
-    ├── pending_hooks.md - 待回收伏笔
-    ├── particle_ledger.md - 资源账本
-    └── chapter_summaries.md - 章节摘要
+    ├── ledger.md - 资源账本
+    └── relationships.md - 角色关系矩阵
 ```
 
 **可选：使用内置 Agent**
@@ -176,10 +175,10 @@ WriterAgent 采用**两阶段写作**：
 
 ## Step 8: 保存草稿
 
-保存到 `data/novels/{novel_id}/manuscript/`：
+保存到 `data/novels/{novel_id}/data/manuscript/`：
 
 ```
-manuscript/
+data/manuscript/
 ├── arc_001/
 │   ├── ch_005.md          # 最终版本
 │   ├── ch_005_draft.md    # 初稿
@@ -190,11 +189,11 @@ manuscript/
 
 | 操作 | 路径 |
 |------|------|
-| 读取大纲 | `data/novels/{novel_id}/outline/` |
-| 读取角色 | `data/novels/{novel_id}/characters/` |
-| 读取风格 | `data/reference_styles/{参考作品}/` + `data/novels/{novel_id}/style/composed.md` |
-| 读取世界观 | `data/novels/{novel_id}/world/` |
-| 写入草稿 | `data/novels/{novel_id}/manuscript/` |
+| 读取大纲 | `data/novels/{novel_id}/src/outline.md` + `data/novels/{novel_id}/data/hierarchy.yaml` |
+| 读取角色 | `data/novels/{novel_id}/src/characters/` + `data/novels/{novel_id}/data/characters/cards/` |
+| 读取风格 | `data/reference_styles/{参考作品}/` + `data/novels/{novel_id}/data/style/composed.md` |
+| 读取世界观 | `data/novels/{novel_id}/src/world/` + `data/novels/{novel_id}/data/world/` |
+| 写入草稿 | `data/novels/{novel_id}/data/manuscript/` |
 
 ## 前置条件
 
@@ -202,11 +201,11 @@ manuscript/
 
 | 数据 | 必须？ | 说明 |
 |------|--------|------|
-| 大纲 (outline/) | ✅ 必须 | 至少有当前章节的章纲 |
-| 角色卡 (characters/cards/) | ✅ 必须 | 本章出场角色的卡片 |
-| 合成风格 (style/composed.md) | ⚠️ 建议 | 没有则使用默认风格 |
-| 世界观 (world/) | 可选 | 有则加载作为约束 |
-| 伏笔 (foreshadowing/) | 可选 | 有则提示待回收伏笔 |
+| 大纲 (src/outline.md + data/hierarchy.yaml) | ✅ 必须 | 至少有当前章节的章纲 |
+| 角色卡 (data/characters/cards/) | ✅ 必须 | 本章出场角色的卡片 |
+| 合成风格 (data/style/composed.md) | ⚠️ 建议 | 没有则使用默认风格 |
+| 世界观 (src/world/ + data/world/) | 可选 | 有则加载作为约束 |
+| 伏笔 (data/foreshadowing/dag.yaml) | 可选 | 有则提示待回收伏笔 |
 
 ## 错误处理
 

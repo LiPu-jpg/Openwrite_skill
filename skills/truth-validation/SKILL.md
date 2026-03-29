@@ -11,9 +11,12 @@ description: Use when user wants to validate story consistency, check for plot h
 
 真相文件是记录世界当前状态的 Markdown 文件，包括：
 - `current_state.md` - 世界当前状态
-- `pending_hooks.md` - 待回收伏笔
-- `particle_ledger.md` - 资源账本
-- `chapter_summaries.md` - 章节摘要
+- `ledger.md` - 资源账本
+- `relationships.md` - 角色关系矩阵
+
+相关运行时文件（用于一致性校验）：
+- `data/foreshadowing/dag.yaml` - 伏笔状态
+- `data/hierarchy.yaml` 与 `data/compressed/` - 章节摘要与压缩信息
 
 ## 验证问题类型
 

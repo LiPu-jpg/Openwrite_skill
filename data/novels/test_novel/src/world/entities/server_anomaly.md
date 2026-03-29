@@ -1,6 +1,27 @@
-# 线上服务器故障与异常日志
++++
+id = "server_anomaly"
+name = "线上服务器故障与异常日志"
+type = "event"
+subtype = "incident"
+status = "active"
+summary = "周五深夜的线上事故被陈明用术法解决，但日志里留下了未解释的异常波动。"
+tags = ["事件", "服务器", "伏笔", "都市"]
+detail_refs = ["规则", "特征", "关联"]
 
-> event | incident | active
+[[related]]
+target = "company"
+kind = "happens_at"
+weight = 0.91
+note = "公司场景中的关键事故"
+
+[[related]]
+target = "shufa_system"
+kind = "uses"
+weight = 0.87
+note = "陈明第一次实际借助术法处理事故"
++++
+
+# 线上服务器故障与异常日志
 
 周五深夜服务器严重故障，陈明用术法感知定位故障点，但监控日志中留下了
 无法解释的异常波动。这是一个悬而未决的隐患——日志异常可能在后续被

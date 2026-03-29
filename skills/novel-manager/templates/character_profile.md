@@ -1,5 +1,5 @@
 # 角色档案模板 (Markdown格式)
-# 文件路径: data/novels/{novel_id}/characters/profiles/{character_name}.md
+# 文件路径: data/novels/{novel_id}/src/characters/{character_name}.md
 
 > 提示：动态信息（位置/状态/目标/关系）统一放真相文件，AI 自动维护。
 > 此文件只保留静态设计信息。

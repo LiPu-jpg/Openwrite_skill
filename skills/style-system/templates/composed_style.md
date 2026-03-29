@@ -1,7 +1,7 @@
 # 风格合成文档模板
 
 > 本模板用于生成最终的写作风格指令。Agent 合成风格时按此结构输出到
-> `data/novels/{novel_id}/style/composed.md`
+> `data/novels/{novel_id}/data/style/composed.md`
 
 ---
 
@@ -91,6 +91,6 @@
 | 层级 | 文件 | 优先级 |
 |------|------|--------|
 | Layer 3 | `data/novels/{novel_id}/...` | 最高（硬性约束） |
-| Layer 2 | `data/novels/{novel_id}/style/fingerprint.yaml` | 高（风格约束） |
+| Layer 2 | `data/novels/{novel_id}/data/style/fingerprint.yaml` | 高（风格约束） |
 | Layer 1 | `craft/humanization.yaml` 等 | 参考（可选技法） |
 | 覆盖 | 用户实时指令 | 最高 |

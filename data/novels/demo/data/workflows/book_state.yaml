@@ -1,0 +1,8 @@
+novel_id: demo
+stage: discovery
+current_arc: ''
+current_section: ''
+current_chapter: ''
+pending_confirmation: ''
+blocking_reason: ''
+last_agent_action: ''

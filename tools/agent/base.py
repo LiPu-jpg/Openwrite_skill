@@ -1,4 +1,4 @@
-"""Agent 基类 - 从 InkOS base.ts 融合
+"""Agent 基类
 
 提供:
 - 统一的 LLM 调用接口 (chat / chat_with_search)

@@ -1,4 +1,4 @@
-"""后置验证器 - 从 InkOS post-write-validator.ts 融合
+"""后置验证器
 
 零 LLM 成本的确定性规则检测。
 """

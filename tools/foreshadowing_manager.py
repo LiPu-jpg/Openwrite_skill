@@ -61,6 +61,7 @@ class ForeshadowingDAGManager:
             / "data"
             / "novels"
             / self.novel_id
+            / "data"
             / "foreshadowing"
             / "dag.yaml"
         )
@@ -69,6 +70,7 @@ class ForeshadowingDAGManager:
             / "data"
             / "novels"
             / self.novel_id
+            / "data"
             / "foreshadowing"
             / "logs"
         )

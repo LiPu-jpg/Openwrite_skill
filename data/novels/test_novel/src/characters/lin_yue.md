@@ -1,3 +1,26 @@
++++
+id = "lin_yue"
+name = "林月"
+tier = "重要配角"
+age = 32
+occupation = "技术组长"
+summary = "高冷强势的技术组长，外冷内热，是最早察觉陈明异常变化的关键观察者。"
+tags = ["都市", "职场", "管理者", "重要配角"]
+detail_refs = ["基本信息", "外貌", "性格", "背景", "当前状态", "关系"]
+
+[[related]]
+target = "chen_ming"
+kind = "superior"
+weight = 0.78
+note = "直属下属，近期重点观察对象"
+
+[[related]]
+target = "zhao_lei"
+kind = "superior"
+weight = 0.61
+note = "直属下属，经常被她抓包摸鱼"
++++
+
 # 林月
 
 ## 基本信息

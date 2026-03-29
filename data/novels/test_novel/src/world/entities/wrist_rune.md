@@ -1,6 +1,27 @@
-# 腕部符文印记
++++
+id = "wrist_rune"
+name = "腕部符文印记"
+type = "item"
+subtype = "artifact"
+status = "active"
+summary = "陈明手腕内侧浮现的淡蓝色符文，是术师觉醒最直观的物理标志。"
+tags = ["符文", "觉醒标记", "物品", "伏笔"]
+detail_refs = ["规则", "特征", "关联", "伏笔"]
 
-> item | artifact | active
+[[related]]
+target = "shufa_system"
+kind = "belongs_to"
+weight = 0.9
+note = "术法体系的物理标志"
+
+[[related]]
+target = "chen_ming"
+kind = "owned_by"
+weight = 0.95
+note = "当前持有者与载体"
++++
+
+# 腕部符文印记
 
 陈明手腕内侧浮现的淡蓝色符文，是术师觉醒的物理标志。
 形状类似电路图与古代符箓的混合体，平时若隐若现，能力活跃时剧烈发光。

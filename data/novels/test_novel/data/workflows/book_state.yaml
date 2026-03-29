@@ -1,0 +1,8 @@
+novel_id: test_novel
+stage: review_and_revise
+current_arc: ''
+current_section: ''
+current_chapter: ch_001
+pending_confirmation: ''
+blocking_reason: ''
+last_agent_action: delegated_writing

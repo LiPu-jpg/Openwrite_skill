@@ -277,13 +277,13 @@ AI: ✨ 风格润色中...
 
 | 操作 | 路径 |
 |------|------|
-| 读取草稿 | `data/novels/{id}/manuscript/` |
-| 读取合成风格 | `data/novels/{id}/style/composed.md` |
+| 读取草稿 | `data/novels/{id}/data/manuscript/` |
+| 读取合成风格 | `data/novels/{id}/data/style/composed.md` |
 | 读取参考风格 | `data/reference_styles/{参考作品}/` |
-| 读取角色设定 | `data/novels/{id}/characters/` |
-| 读取世界观 | `data/novels/{id}/world/` |
-| 写入润色 | `data/novels/{id}/manuscript/` |
-| 审查记录 | `data/novels/{id}/manuscript/*_review.yaml` |
+| 读取角色设定 | `data/novels/{id}/src/characters/` + `data/novels/{id}/data/characters/cards/` |
+| 读取世界观 | `data/novels/{id}/src/world/` + `data/novels/{id}/data/world/` |
+| 写入润色 | `data/novels/{id}/data/manuscript/` |
+| 审查记录 | `data/novels/{id}/data/manuscript/*_review.yaml` |
 
 ## 审查模式
 

@@ -26,17 +26,23 @@ class CharacterProfile(BaseModel):
     character_id: str = Field(default="", description="角色 ID")
     name: str = Field(default="", description="角色名")
     tier: CharacterTier = Field(default=CharacterTier.MINOR, description="层级")
+    summary: str = Field(default="", description="一句话摘要")
     backstory: str = Field(default="", description="背景")
     appearance: str = Field(default="", description="外貌")
     personality: List[str] = Field(default_factory=list, description="性格标签")
     faction: str = Field(default="", description="势力")
     current_location: str = Field(default="", description="当前位置")
     current_status: str = Field(default="", description="当前状态")
+    tags: List[str] = Field(default_factory=list, description="标签")
+    detail_refs: List[str] = Field(default_factory=list, description="细节索引")
+    related: List[Dict] = Field(default_factory=list, description="关联对象")
     notes: str = Field(default="", description="备注")
 
     def to_context_text(self, max_chars: int = 0) -> str:
         """生成用于 AI 上下文的纯文本摘要"""
         parts: List[str] = [f"【{self.name}】 ({self.tier.value})"]
+        if self.summary:
+            parts.append(f"摘要: {self.summary}")
         if self.appearance:
             parts.append(f"外貌: {self.appearance}")
         if self.personality:
@@ -45,6 +51,30 @@ class CharacterProfile(BaseModel):
             parts.append(f"背景: {self.backstory}")
         if self.faction:
             parts.append(f"势力: {self.faction}")
+        if self.current_location:
+            parts.append(f"位置: {self.current_location}")
+        if self.current_status:
+            parts.append(f"状态: {self.current_status}")
+        if self.tags:
+            parts.append(f"标签: {'、'.join(self.tags)}")
+        if self.detail_refs:
+            parts.append(f"细节索引: {'、'.join(self.detail_refs)}")
+        if self.related:
+            related_bits: List[str] = []
+            for rel in self.related[:5]:
+                if not isinstance(rel, dict):
+                    continue
+                target = str(rel.get("target", "")).strip()
+                if not target:
+                    continue
+                detail = (
+                    str(rel.get("note", "")).strip()
+                    or str(rel.get("description", "")).strip()
+                    or str(rel.get("kind", "")).strip()
+                )
+                related_bits.append(f"{target}（{detail}）" if detail else target)
+            if related_bits:
+                parts.append(f"关联: {'；'.join(related_bits)}")
         text = "\n".join(parts)
         if max_chars and len(text) > max_chars:
             return text[:max_chars] + "…"
@@ -74,8 +104,10 @@ class CharacterCard(BaseModel):
             character_id=self.id,
             name=self.name,
             tier=CharacterTier(self.tier) if self.tier in [t.value for t in CharacterTier] else CharacterTier.MINOR,
+            summary=self.brief,
             appearance=self.appearance,
             backstory=self.background,
             personality=self.personality,
             faction=self.faction,
+            related=self.relationships,
         )

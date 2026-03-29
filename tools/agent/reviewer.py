@@ -1,11 +1,11 @@
 """ReviewerAgent - 审核 Agent
 
-从 InkOS ContinuityAuditor 融合：
+能力：
 - 33维度审计
 - AI痕迹检测
 - 连续性检查
 
-融合 OpenWrite 的：
+扩展：
 - 风格检查
 - 逻辑检查
 """
@@ -31,7 +31,7 @@ class ReviewIssue:
     category: str
     description: str
     suggestion: str
-    dimension: Optional[int] = None  # InkOS 维度编号
+    dimension: Optional[int] = None  # 维度编号
 
 
 @dataclass
@@ -48,7 +48,7 @@ class ReviewResult:
 class ReviewerAgent(BaseAgent):
     """审核 Agent
 
-    从 InkOS 的 ContinuityAuditor 融合，支持：
+    支持：
     - 33维度审计（逻辑、连续性）
     - AI痕迹检测（段落等长、套话密度等）
     - 敏感词检测
@@ -61,7 +61,7 @@ class ReviewerAgent(BaseAgent):
         )
     """
 
-    # InkOS 的 33维度映射
+    # 33维度映射
     DIMENSION_MAP = {
         1: "OOC检查",
         2: "时间线检查",
@@ -157,7 +157,7 @@ class ReviewerAgent(BaseAgent):
         """基于规则的检查（零 LLM 成本）"""
         issues = []
 
-        # 检查段落长度均匀度（InkOS dim 20）
+        # 检查段落长度均匀度（dim 20）
         paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
         if len(paragraphs) >= 3:
             lengths = [len(p) for p in paragraphs]
@@ -177,7 +177,7 @@ class ReviewerAgent(BaseAgent):
                         )
                     )
 
-        # 检查列表式结构（InkOS dim 23）
+        # 检查列表式结构（dim 23）
         lines = content.split("\n")
         list_pattern = re.compile(r"^[一二三四五六七八九十\d+][、.].+")
         consecutive_lists = 0
@@ -202,10 +202,10 @@ class ReviewerAgent(BaseAgent):
         return issues
 
     def _detect_ai_tells(self, content: str) -> list[ReviewIssue]:
-        """AI痕迹检测（融合 InkOS ai-tells.ts）"""
+        """AI痕迹检测"""
         issues = []
 
-        # ── 套话词密度检测（InkOS dim 21）─
+        # ── 套话词密度检测（dim 21）─
         hedge_words = ["似乎", "可能", "或许", "大概", "某种程度上", "一定程度上", "在某种意义上"]
         total_chars = len(content)
         if total_chars > 0:
@@ -222,7 +222,7 @@ class ReviewerAgent(BaseAgent):
                     )
                 )
 
-        # ── 公式化转折词检测（InkOS dim 22）─
+        # ── 公式化转折词检测（dim 22）─
         transition_words = [
             "然而",
             "不过",

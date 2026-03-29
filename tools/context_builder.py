@@ -1,6 +1,6 @@
 """上下文构建器 - 组装生成所需的所有上下文
 
-这是 OpenCode Skill 迁移的核心组件，负责：
+这是上下文组装的核心组件，负责：
 1. 加载大纲窗口（前后 N 章）
 2. 识别并加载出场角色
 3. 查询伏笔状态（待回收/已埋下）
@@ -33,6 +33,9 @@ from models.context_package import (
     WorldRules,
 )
 from .truth_manager import TruthFilesManager
+from .frontmatter import parse_toml_front_matter
+from .source_sync import ensure_runtime_fresh
+from .outline_parser import OutlineMdParser
 
 
 class ContextBuilder:
@@ -70,9 +73,10 @@ class ContextBuilder:
         self.novel_id = novel_id
         self.reference_style = reference_style
 
-        # 数据路径
-        self.data_dir = project_root / "data" / "novels" / novel_id
-        self.src_dir = project_root / "data" / "novels" / novel_id / "src"
+        # 数据路径（仅支持新布局）
+        self.novel_dir = project_root / "data" / "novels" / novel_id
+        self.src_dir = self.novel_dir / "src"
+        self.data_dir = self.novel_dir / "data"
         self.ref_style_dir = (
             project_root / "data" / "reference_styles" / reference_style
             if reference_style
@@ -80,7 +84,7 @@ class ContextBuilder:
         )
         self.craft_dir = project_root / "craft"
 
-        # 真相文件管理器（融合 InkOS）
+        # 真相文件管理器
         self.truth_manager = TruthFilesManager(project_root, novel_id)
 
         # 缓存
@@ -163,8 +167,9 @@ class ContextBuilder:
             emotion_arc=emotion_arc,
             dramatic_context=dramatic_context,
             current_state=truth.current_state,
-            pending_hooks=pending_hooks_str,
-            particle_ledger=truth.particle_ledger,
+            foreshadowing_summary=pending_hooks_str,
+            ledger=truth.ledger,
+            relationships=truth.relationships,
             chapter_summaries="",  # 章节摘要现在从大纲 hierarchy 或 compressed/ 获取
         )
 
@@ -175,17 +180,22 @@ class ContextBuilder:
 
     def _load_outline_hierarchy(self) -> OutlineHierarchy:
         """加载大纲层级结构"""
+        freshness = ensure_runtime_fresh(self.project_root, self.novel_id)
+        if freshness.get("auto_synced"):
+            self._hierarchy_cache = None
+
         if self._hierarchy_cache:
             return self._hierarchy_cache
 
+        outline_src = self.src_dir / "outline.md"
+        if outline_src.exists():
+            text = self._load_text(outline_src)
+            if text.strip():
+                hierarchy = OutlineMdParser().parse(text, self.novel_id)
+                self._hierarchy_cache = hierarchy
+                return hierarchy
+
         hierarchy_path = self.data_dir / "hierarchy.yaml"
-        if not hierarchy_path.exists():
-            src_outline = self.src_dir / "outline" / "outline.md"
-            if src_outline.exists():
-                from tools.outline_sync import sync_outline_to_hierarchy
-
-                sync_outline_to_hierarchy(self.src_dir, self.data_dir)
-
         if not hierarchy_path.exists():
             return OutlineHierarchy(novel_id=self.novel_id)
 
@@ -217,9 +227,26 @@ class ContextBuilder:
                 node_type=OutlineNodeType.ARC,
                 title=arc.get("title", ""),
                 summary=arc.get("description", ""),
+                arc_structure=arc.get("arc_structure", ""),
+                arc_emotional_arc=arc.get("arc_emotional_arc", ""),
                 children_ids=arc.get("chapters", []),
             )
             hierarchy.arcs.append(arc_node)
+
+        # 解析节纲
+        sections_data = data.get("sections", [])
+        for idx, sec in enumerate(sections_data):
+            section_node = OutlineNode(
+                node_id=sec.get("id", f"sec_{idx + 1:03d}"),
+                node_type=OutlineNodeType.SECTION,
+                title=sec.get("title", ""),
+                parent_id=sec.get("arc_id", ""),
+                section_structure=sec.get("section_structure", ""),
+                section_emotional_arc=sec.get("section_emotional_arc", ""),
+                section_tension=sec.get("section_tension", ""),
+                children_ids=sec.get("chapters", []),
+            )
+            hierarchy.sections.append(section_node)
 
         # 解析章节
         chapters_data = data.get("chapters", [])
@@ -230,7 +257,12 @@ class ContextBuilder:
                 title=ch.get("title", ""),
                 summary=ch.get("summary", ""),
                 word_count_target=ch.get("word_count", 6000),
+                estimated_words=ch.get("word_count", 6000),
                 goals=ch.get("goals", []),
+                dramatic_position=ch.get("dramatic_position", ""),
+                content_focus=ch.get("content_focus", ch.get("summary", "")),
+                involved_characters=ch.get("involved_characters", []),
+                involved_settings=ch.get("involved_settings", []),
                 status=ch.get("status", "draft"),
             )
             hierarchy.chapters.append(chapter_node)
@@ -266,6 +298,16 @@ class ContextBuilder:
             return profiles
 
         character_ids = chapter.involved_characters
+        if not character_ids:
+            section = hierarchy.get_parent_section(chapter_id)
+            if section:
+                agg: List[str] = []
+                for ch_id in section.children_ids:
+                    node = hierarchy.get_node(ch_id)
+                    if node and node.involved_characters:
+                        agg.extend(node.involved_characters)
+                character_ids = list(dict.fromkeys(agg))
+
         if not character_ids:
             return profiles
 
@@ -307,9 +349,7 @@ class ContextBuilder:
         truth = truth_manager.load_truth_files()
 
         # 从 current_state.md 解析角色动态状态
-        dynamic_states = self._parse_current_state_for_characters(
-            truth.current_state, truth.character_matrix
-        )
+        dynamic_states = self._parse_current_state_for_characters(truth.current_state, truth.relationships)
 
         # 合并到 profiles
         for profile in profiles:
@@ -321,7 +361,7 @@ class ContextBuilder:
                 # current_location 和 current_status 会用于 to_context_text()
 
     def _parse_current_state_for_characters(
-        self, current_state: str, character_matrix: str
+        self, current_state: str, relationships: str
     ) -> Dict[str, Dict[str, str]]:
         """从真相文件解析角色的动态状态
 
@@ -360,10 +400,10 @@ class ContextBuilder:
                         result[char_name] = {}
                     result[char_name]["status"] = value
 
-        # 如果没解析到，尝试从 character_matrix 解析
-        if not result and character_matrix:
-            # 从 character_matrix 解析关系和位置
-            result = self._parse_character_matrix(character_matrix)
+        # 如果没解析到，尝试从 relationships 解析
+        if not result and relationships:
+            # 从 relationships 解析关系和位置
+            result = self._parse_character_matrix(relationships)
 
         return result
 
@@ -407,15 +447,31 @@ class ContextBuilder:
         if not text:
             return None
 
-        # 简单解析 markdown
-        name = self._extract_md_heading(text) or char_id
+        meta, body = parse_toml_front_matter(text)
+        name = str(meta.get("name", "")).strip() or self._extract_md_heading(body) or char_id
+
+        tier_raw = str(meta.get("tier", "")).strip()
+        tier_values = {t.value: t for t in CharacterTier}
+        tier = tier_values.get(tier_raw, CharacterTier.MINOR)
+
+        backstory = self._extract_md_section(body, "背景") or self._extract_md_section(body, "background")
+        appearance = self._extract_md_section(body, "外貌") or self._extract_md_section(body, "appearance")
+        personality = self._extract_md_list(body, "性格") or self._extract_md_list(body, "personality")
 
         return CharacterProfile(
-            character_id=char_id,
+            character_id=str(meta.get("id", "")).strip() or char_id,
             name=name,
-            backstory=self._extract_md_section(text, "背景"),
-            appearance=self._extract_md_section(text, "外貌"),
-            personality=self._extract_md_list(text, "性格"),
+            tier=tier,
+            summary=str(meta.get("summary", "")).strip(),
+            backstory=backstory,
+            appearance=appearance,
+            personality=personality,
+            faction=str(meta.get("faction", "")).strip(),
+            tags=list(meta.get("tags", [])) if isinstance(meta.get("tags"), list) else [],
+            detail_refs=list(meta.get("detail_refs", []))
+            if isinstance(meta.get("detail_refs"), list)
+            else [],
+            related=list(meta.get("related", [])) if isinstance(meta.get("related"), list) else [],
         )
 
     def _card_to_profile(
@@ -430,9 +486,15 @@ class ContextBuilder:
         return CharacterProfile(
             character_id=char_id,
             name=static.get("name", char_id),
+            tier=CharacterTier(static.get("tier"))
+            if static.get("tier") in [t.value for t in CharacterTier]
+            else CharacterTier.MINOR,
+            summary=static.get("brief", ""),
             appearance=static.get("appearance", ""),
             backstory=static.get("background", ""),
             personality=static.get("personality", []),
+            faction=static.get("faction", ""),
+            related=static.get("relationships", []),
         )
 
     def _get_foreshadowing_state(self, chapter_id: str) -> ForeshadowingState:
@@ -643,20 +705,26 @@ class ContextBuilder:
         if not self.data_dir.exists():
             return setting
 
-        # 加载世界观规则
-        world_path = self.data_dir / "world" / "rules.md"
+        # 加载世界观规则（优先 src）
+        world_path = self.src_dir / "world" / "rules.md"
+        if not world_path.exists():
+            world_path = self.data_dir / "world" / "rules.md"
         if world_path.exists():
             text = self._load_text(world_path)
             setting["worldbuilding"] = text[:1000]
 
         # 加载术语表
-        term_path = self.data_dir / "world" / "terminology.md"
+        term_path = self.src_dir / "world" / "terminology.md"
+        if not term_path.exists():
+            term_path = self.data_dir / "world" / "terminology.md"
         if term_path.exists():
             text = self._load_text(term_path)
             setting["terminology"] = text[:500]
 
-        # 加载角色设定（从 characters/profiles/ 目录汇总）
-        profiles_dir = self.data_dir / "characters" / "profiles"
+        # 加载角色设定（优先 src/characters）
+        profiles_dir = self.src_dir / "characters"
+        if not profiles_dir.exists():
+            profiles_dir = self.data_dir / "characters" / "profiles"
         if profiles_dir.exists():
             chars_text = []
             for p in sorted(profiles_dir.glob("*.md"))[:5]:
@@ -699,7 +767,9 @@ class ContextBuilder:
         """
         rules = WorldRules()
 
-        world_dir = self.data_dir / "world"
+        world_dir = self.src_dir / "world"
+        if not world_dir.exists():
+            world_dir = self.data_dir / "world"
 
         # 1. 从 world/rules.md 加载世界规则
         rules_path = world_dir / "rules.md"
@@ -754,7 +824,7 @@ class ContextBuilder:
                 f"{i:03d}.md",
             ]
             for pattern in patterns:
-                matches = list(manuscript_dir.glob(pattern))
+                matches = sorted(manuscript_dir.rglob(pattern))
                 if matches:
                     text = self._load_text(matches[0])
                     if text:

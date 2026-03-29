@@ -5,7 +5,7 @@
 
 目录结构:
 - src/ - 人类编辑的 source of truth
-  - outline/outline.md - 大纲源文件
+    - outline.md - 大纲源文件
   - characters/*.md - 角色源文件
   - world/*.md - 世界源文件
 - data/ - 机器生成的运行时文件
@@ -33,9 +33,10 @@ def init_project(project_root: Path, novel_id: str, title: Optional[str] = None)
     novel_root = project_root / f"data/novels/{novel_id}"
 
     src_dirs = [
-        novel_root / "src" / "outline",
+        novel_root / "src",
         novel_root / "src" / "characters",
         novel_root / "src" / "world",
+        novel_root / "src" / "world" / "entities",
     ]
 
     data_dirs = [
@@ -45,6 +46,8 @@ def init_project(project_root: Path, novel_id: str, title: Optional[str] = None)
         novel_root / "data" / "world" / "entities",
         novel_root / "data" / "compressed",
         novel_root / "data" / "snapshots",
+        novel_root / "data" / "test_outputs" / "context_packets",
+        novel_root / "data" / "test_outputs" / "multi_write",
     ]
 
     for dir_path in src_dirs + data_dirs:
@@ -61,7 +64,7 @@ current_chapter: ch_001
         config_path.write_text(config_content, encoding="utf-8")
         print(f"✓ 创建配置: novel_config.yaml")
 
-    outline_src_path = novel_root / "src" / "outline" / "outline.md"
+    outline_src_path = novel_root / "src" / "outline.md"
     if not outline_src_path.exists():
         outline_content = """# 大纲
 
@@ -86,13 +89,13 @@ current_chapter: ch_001
 
 """
         outline_src_path.write_text(outline_content, encoding="utf-8")
-        print(f"✓ 创建大纲源文件: data/novels/{novel_id}/src/outline/outline.md")
+        print(f"✓ 创建大纲源文件: data/novels/{novel_id}/src/outline.md")
 
     from tools.outline_sync import sync_outline_to_hierarchy
 
     src_dir = novel_root / "src"
     data_dir = novel_root / "data"
-    sync_outline_to_hierarchy(src_dir / "outline", data_dir)
+    sync_outline_to_hierarchy(src_dir, data_dir)
     print(f"✓ 生成层级文件: data/novels/{novel_id}/data/hierarchy.yaml")
 
     rules_path = novel_root / "src" / "world" / "rules.md"
@@ -164,11 +167,12 @@ rhythm: "待定义"
     print(f"    outline.md   - 大纲源文件")
     print(f"    characters/  - 角色源文件")
     print(f"    world/       - 世界源文件")
+    print(f"      entities/  - 世界实体源文件")
     print(f"  data/          - 机器生成的运行时文件")
     print(f"    hierarchy.yaml - 从 src/outline.md 自动生成")
     print(f"    characters/cards/ - 生成的角色卡片")
     print(f"\n下一步:")
-    print(f"1. 编辑 data/novels/{novel_id}/src/outline/outline.md 添加大纲")
+    print(f"1. 编辑 data/novels/{novel_id}/src/outline.md 添加大纲")
     print(f"2. 使用 novel-manager 创建角色 (会同步到 src/characters/)")
     print(f"3. 填充 data/novels/{novel_id}/src/world/ 世界观")
     print(f"4. 使用 novel-creator 开始创作")

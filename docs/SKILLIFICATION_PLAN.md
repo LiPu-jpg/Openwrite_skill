@@ -1,5 +1,7 @@
 # OpenWrite Skill 化计划
 
+> 注：本文是早期 skill 化调研文档。当前主干实现里，`openwrite agent` 已切为 orchestrator 主入口，不再是单独的 ReAct Agent。
+
 ## 一、现状调研
 
 ### 1.1 已有的 CLI 命令（10个）
@@ -14,10 +16,10 @@
 | `openwrite wizard` | `cli.py:_cmd_wizard` | 交互引导 |
 | `openwrite radar` | `cli.py:_cmd_radar` | 市场分析 |
 | `openwrite status` | `cli.py:_cmd_status` | 查看状态 |
-| `openwrite agent` | `cli.py:_cmd_agent` | ReAct Agent |
+| `openwrite agent` | `cli.py:_cmd_agent` | 主编排入口（orchestrator） |
 | (style extract 内) | `_cmd_style_extract` | 提取风格 |
 
-### 1.2 已有的 ReAct Agent 工具（9个）
+### 1.2 历史 ReAct 工具面（兼容层）
 
 | 工具 | 说明 |
 |------|------|

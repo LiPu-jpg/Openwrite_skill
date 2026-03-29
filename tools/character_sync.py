@@ -3,6 +3,8 @@ import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
+from tools.frontmatter import parse_toml_front_matter
+
 
 def sync_all_profiles_to_cards(src_dir: Path, data_dir: Path) -> None:
     src_chars = src_dir / "characters"
@@ -26,12 +28,18 @@ def parse_profile_to_card(md_file: Path) -> Optional[Dict[str, Any]]:
     with open(md_file, "r", encoding="utf-8") as f:
         content = f.read()
 
-    lines = content.split("\n")
+    meta, body = parse_toml_front_matter(content)
+    lines = body.split("\n")
 
-    name = ""
-    identity = ""
-    age = None
+    name = str(meta.get("name", "")).strip()
+    identity = str(meta.get("occupation") or meta.get("identity") or "").strip()
+    age = meta.get("age")
     appearance = {}
+    summary = str(meta.get("summary", "")).strip()
+    background = ""
+    personality: List[str] = []
+    tier = str(meta.get("tier", "普通配角")).strip() or "普通配角"
+    relationships = meta.get("related", [])
 
     current_section = None
     appearance_lines = []
@@ -53,9 +61,14 @@ def parse_profile_to_card(md_file: Path) -> Optional[Dict[str, Any]]:
             if level == 1:
                 name = title
             elif level == 2:
-                if title in ("外貌", "外貌特征"):
+                lowered = title.lower()
+                if title in ("外貌", "外貌特征") or lowered == "appearance":
                     current_section = "appearance"
                     appearance_lines = []
+                elif title in ("背景",) or lowered == "background":
+                    current_section = "background"
+                elif title in ("性格",) or lowered == "personality":
+                    current_section = "personality"
                 else:
                     current_section = None
             i += 1
@@ -102,6 +115,21 @@ def parse_profile_to_card(md_file: Path) -> Optional[Dict[str, Any]]:
             i += 1
             continue
 
+        if current_section == "background":
+            background = f"{background} {stripped}".strip()
+            i += 1
+            continue
+
+        if current_section == "personality":
+            item_match = re.match(r"^-\s*(.+)$", stripped)
+            if item_match:
+                personality.append(item_match.group(1).strip())
+            elif stripped.startswith("#"):
+                current_section = None
+                i -= 1
+            i += 1
+            continue
+
         kv_match = re.match(r"^-\s*([^:]+):\s*(.+)$", stripped)
         if kv_match:
             key = kv_match.group(1).strip()
@@ -132,17 +160,46 @@ def parse_profile_to_card(md_file: Path) -> Optional[Dict[str, Any]]:
                     appearance["clothing"] = part
 
     if not name:
+        name = _extract_md_heading(body)
+    if not background:
+        background = _extract_md_section(body, "背景") or _extract_md_section(body, "background")
+    if not personality:
+        personality = _extract_md_list(body, "性格") or _extract_md_list(body, "personality")
+    if not name:
         return None
 
     card: Dict[str, Any] = {
-        "id": md_file.stem,
+        "id": str(meta.get("id", md_file.stem)).strip() or md_file.stem,
         "name": name,
-        "identity": identity,
+        "tier": tier,
         "age": age,
-        "tier": "supporting",
+        "occupation": identity,
+        "identity": identity,
+        "brief": summary,
+        "background": background,
+        "personality": personality,
+        "relationships": relationships if isinstance(relationships, list) else [],
     }
 
     if appearance:
         card["appearance"] = appearance
 
     return card
+
+
+def _extract_md_heading(text: str) -> str:
+    match = re.search(r"^#\s+(.+)$", text, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_md_section(text: str, section_name: str) -> str:
+    pattern = rf"^##\s+[^\n]*{re.escape(section_name)}[^\n]*\n(.*?)(?=\n##|\Z)"
+    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL | re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def _extract_md_list(text: str, section_name: str) -> List[str]:
+    section = _extract_md_section(text, section_name)
+    if not section:
+        return []
+    return [item.strip() for item in re.findall(r"^[-*]\s+(.+)$", section, re.MULTILINE)]

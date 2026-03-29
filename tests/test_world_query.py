@@ -59,6 +59,78 @@ class TestParseEntity:
         assert entity["type"] == ""  # 无 blockquote
         assert len(entity["features"]) == 2
 
+    def test_entity_with_toml_front_matter(self, tmp_path):
+        entity_path = tmp_path / "company.md"
+        entity_path.write_text(
+            """+++
+id = "company"
+name = "公司（互联网科技公司）"
+type = "location"
+subtype = "building"
+status = "active"
+summary = "陈明所在的互联网科技公司，是故事主要发生地。"
+tags = ["公司", "都市", "主舞台"]
+detail_refs = ["rules", "features", "relations"]
+
+[[related]]
+target = "chen_ming"
+kind = "employee"
+weight = 0.93
+note = "主角所在公司"
++++
+
+# 公司（互联网科技公司）
+
+## rules
+- 996工作制
+- 有监控系统
+
+## features
+- 开放式工位
+
+## relations
+- zhao_lei — 同组同事
+""",
+            encoding="utf-8",
+        )
+
+        entity = parse_entity(entity_path)
+        assert entity["id"] == "company"
+        assert entity["name"] == "公司（互联网科技公司）"
+        assert entity["type"] == "location"
+        assert entity["subtype"] == "building"
+        assert entity["status"] == "active"
+        assert entity["description"] == "陈明所在的互联网科技公司，是故事主要发生地。"
+        assert entity["tags"] == ["公司", "都市", "主舞台"]
+        assert entity["detail_refs"] == ["rules", "features", "relations"]
+        assert any(rel["target"] == "chen_ming" for rel in entity["relations"])
+        assert any(rel["target"] == "zhao_lei" for rel in entity["relations"])
+
+    def test_partial_front_matter_still_reads_legacy_blockquote(self, tmp_path):
+        entity_path = tmp_path / "company.md"
+        entity_path.write_text(
+            """+++
+id = "company"
+name = "公司"
+type = "location"
++++
+
+# 公司
+
+> location | building | active
+
+故事主要发生地。
+""",
+            encoding="utf-8",
+        )
+
+        entity = parse_entity(entity_path)
+
+        assert entity["type"] == "location"
+        assert entity["subtype"] == "building"
+        assert entity["status"] == "active"
+        assert entity["description"] == "故事主要发生地。"
+
 
 # ── _parse_relations ─────────────────────────────────────────
 
@@ -122,7 +194,7 @@ class TestListEntities:
     @pytest.fixture
     def entity_project(self, tmp_path):
         """创建包含实体文件的项目"""
-        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
 
         (entities_dir / "place_a.md").write_text(
@@ -148,7 +220,7 @@ class TestListEntities:
         assert result[0]["name"] == "天山派"
 
     def test_list_empty_dir(self, tmp_path):
-        entities_dir = tmp_path / "data" / "novels" / "empty" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "empty" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
         result = list_entities("empty", project_root=tmp_path)
         assert result == []
@@ -162,6 +234,30 @@ class TestListEntities:
         for e in result:
             assert len(e["description"]) <= 63  # 60 + "..."
 
+    def test_list_entities_from_front_matter_summary(self, tmp_path):
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
+        entities_dir.mkdir(parents=True)
+        (entities_dir / "company.md").write_text(
+            """+++
+id = "company"
+name = "公司"
+type = "location"
+subtype = "building"
+status = "active"
+summary = "陈明所在的互联网科技公司，是故事主要发生地。"
++++
+
+# 公司
+""",
+            encoding="utf-8",
+        )
+
+        result = list_entities("test", project_root=tmp_path)
+        assert len(result) == 1
+        assert result[0]["name"] == "公司"
+        assert result[0]["type"] == "location"
+        assert result[0]["description"] == "陈明所在的互联网科技公司，是故事主要发生地。"
+
 
 # ── get_entity ───────────────────────────────────────────────
 
@@ -171,7 +267,7 @@ class TestGetEntity:
 
     @pytest.fixture
     def entity_project(self, tmp_path):
-        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
         (entities_dir / "item_x.md").write_text(
             "# 天命之剑\n\n> 物品 | 武器 | active\n\n传说中的神兵。\n\n## 规则\n\n- 只有天命之人能拔出\n",
@@ -198,7 +294,7 @@ class TestGetRelationsGraph:
 
     @pytest.fixture
     def relation_project(self, tmp_path):
-        entities_dir = tmp_path / "data" / "novels" / "test" / "world" / "entities"
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
         entities_dir.mkdir(parents=True)
 
         (entities_dir / "a.md").write_text(
@@ -226,3 +322,65 @@ class TestGetRelationsGraph:
         a_to_b = [r for r in graph["relations"] if r["source"] == "a" and r["target"] == "b"]
         assert len(a_to_b) == 1
         assert a_to_b[0]["description"] == "依赖"
+
+    def test_graph_supports_front_matter_related_entries(self, tmp_path):
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
+        entities_dir.mkdir(parents=True)
+        (entities_dir / "company.md").write_text(
+            """+++
+id = "company"
+name = "公司"
+type = "location"
+subtype = "building"
+status = "active"
+summary = "主舞台"
+
+[[related]]
+target = "chen_ming"
+kind = "employee"
+weight = 0.91
+note = "主角所在公司"
++++
+
+# 公司
+""",
+            encoding="utf-8",
+        )
+
+        graph = get_relations_graph("test", project_root=tmp_path)
+        assert graph["entities"] == ["company"]
+        assert graph["relations"][0]["target"] == "chen_ming"
+        assert graph["relations"][0]["description"] == "主角所在公司"
+
+    def test_graph_deduplicates_front_matter_and_section_relations(self, tmp_path):
+        entities_dir = tmp_path / "data" / "novels" / "test" / "src" / "world" / "entities"
+        entities_dir.mkdir(parents=True)
+        (entities_dir / "company.md").write_text(
+            """+++
+id = "company"
+name = "公司"
+type = "location"
+subtype = "building"
+
+[[related]]
+target = "chen_ming"
+kind = "employee"
+note = "主角所在公司"
++++
+
+# 公司
+
+## 关联
+- chen_ming — 主角所在公司
+""",
+            encoding="utf-8",
+        )
+
+        graph = get_relations_graph("test", project_root=tmp_path)
+
+        assert len(graph["relations"]) == 1
+        assert graph["relations"][0] == {
+            "source": "company",
+            "target": "chen_ming",
+            "description": "主角所在公司",
+        }

@@ -236,18 +236,17 @@ data/novels/my_novel/
 ├── outline/
 │   ├── hierarchy.yaml
 │   └── outline.md
-├── characters/
-│   ├── cards/ (15)
-│   └── profiles/ (15)
-├── world/
-│   ├── rules.md          # 世界底层规则
-│   ├── timeline.md       # 关键事件时间线
-│   ├── terminology.md    # 术语表
-│   └── entities/         # 实体（*.md）
-├── foreshadowing/
-│   └── dag.yaml
-└── manuscript/
-    └── arc_001/ (12 chapters)
+├── src/
+│   ├── characters/ (15)
+│   └── world/
+│       ├── rules.md          # 世界底层规则
+│       ├── timeline.md       # 关键事件时间线
+│       ├── terminology.md    # 术语表
+│       └── entities/         # 实体（*.md）
+└── data/
+    ├── characters/cards/ (15)
+    ├── foreshadowing/dag.yaml
+    └── manuscript/arc_001/ (12 chapters)
 ```
 ```
 
@@ -255,12 +254,12 @@ data/novels/my_novel/
 
 | 操作 | 路径 |
 |------|------|
-| 角色卡 | `data/novels/{id}/characters/cards/*.yaml` |
-| 角色档 | `data/novels/{id}/characters/profiles/*.md` |
-| 世界规则 | `data/novels/{id}/world/rules.md` |
-| 时间线 | `data/novels/{id}/world/timeline.md` |
-| 术语表 | `data/novels/{id}/world/terminology.md` |
-| 世界实体 | `data/novels/{id}/world/entities/*.md` |
+| 角色卡 | `data/novels/{id}/data/characters/cards/*.yaml` |
+| 角色档 | `data/novels/{id}/src/characters/*.md` |
+| 世界规则 | `data/novels/{id}/src/world/rules.md` |
+| 时间线 | `data/novels/{id}/src/world/timeline.md` |
+| 术语表 | `data/novels/{id}/src/world/terminology.md` |
+| 世界实体 | `data/novels/{id}/src/world/entities/*.md` |
 | 世界图谱 | `python3 tools/world_query.py {id} --relations` （自动生成） |
 
 ## 数据格式定义

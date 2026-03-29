@@ -1,5 +1,5 @@
 # 风格分析报告模板（Style Analysis Report Template）
-# 路径: data/novels/{novel_id}/style/analysis_report.yaml
+# 路径: data/novels/{novel_id}/data/style/analysis_report.yaml
 # 生成方式: 分析已写文本后由 Agent 填充
 
 # ── 基本信息 ──────────────────────────────────────────────

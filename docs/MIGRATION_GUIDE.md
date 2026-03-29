@@ -125,17 +125,17 @@ current_chapter: ch_003
 
 | 数据类型 | 路径模板 |
 |---------|---------|
-| 大纲层级 | `data/novels/{novel_id}/outline/hierarchy.yaml` |
-| 大纲 Markdown | `data/novels/{novel_id}/outline/outline.md` |
-| 角色卡片 | `data/novels/{novel_id}/characters/cards/{id}.yaml` |
-| 角色档案 | `data/novels/{novel_id}/characters/profiles/{id}.md` |
-| 世界观实体 | `data/novels/{novel_id}/world/entities/{id}.yaml` |
-| 伏笔节点 | `data/novels/{novel_id}/foreshadowing/nodes/{id}.yaml` |
-| 草稿 | `data/novels/{novel_id}/manuscript/{arc_id}/{ch_id}_draft.md` |
-| 最终版本 | `data/novels/{novel_id}/manuscript/{arc_id}/{ch_id}.md` |
+| 大纲层级 | `data/novels/{novel_id}/data/hierarchy.yaml` |
+| 大纲 Markdown | `data/novels/{novel_id}/src/outline.md` |
+| 角色卡片 | `data/novels/{novel_id}/data/characters/cards/{id}.yaml` |
+| 角色档案 | `data/novels/{novel_id}/src/characters/{id}.md` |
+| 世界观实体 | `data/novels/{novel_id}/src/world/entities/{id}.md` |
+| 伏笔图 | `data/novels/{novel_id}/data/foreshadowing/dag.yaml` |
+| 草稿 | `data/novels/{novel_id}/data/manuscript/{arc_id}/{ch_id}_draft.md` |
+| 最终版本 | `data/novels/{novel_id}/data/manuscript/{arc_id}/{ch_id}.md` |
 | 通用技法 | `craft/{craft_name}.md` |
 | 作品风格 | `styles/{style_id}/fingerprint.yaml` |
-| 作品设定 | `novels/{novel_id}/characters.md` |
+| 作品设定 | `data/novels/{novel_id}/src/characters/*.md` + `src/world/*` |
 
 ### 2.3 工作流编排：Workflow YAML
 

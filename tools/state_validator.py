@@ -1,4 +1,4 @@
-"""状态验证器 - 从 InkOS state-validator.ts 融合
+"""状态验证器
 
 验证 settler 输出的真相文件一致性。
 """

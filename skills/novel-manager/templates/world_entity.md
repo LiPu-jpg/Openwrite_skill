@@ -1,6 +1,6 @@
 # 世界观实体模板 (Markdown 格式)
 #
-# 文件路径: data/novels/{novel_id}/world/entities/{entity_id}.md
+# 文件路径: data/novels/{novel_id}/src/world/entities/{entity_id}.md
 # 文件名即 ID（如 shufa_system.md → id = shufa_system）
 #
 # 解析规则：

@@ -320,21 +320,38 @@ class WizardChatAgent:
                 brief=brief,
             )
 
-            story_dir = project_root / "data" / "novels" / novel_id / "story"
-            story_dir.mkdir(parents=True, exist_ok=True)
+            novel_root = project_root / "data" / "novels" / novel_id
+            src_world_dir = novel_root / "src" / "world"
+            runtime_world_dir = novel_root / "data" / "world"
+            runtime_foreshadowing_dir = novel_root / "data" / "foreshadowing"
+
+            src_world_dir.mkdir(parents=True, exist_ok=True)
+            runtime_world_dir.mkdir(parents=True, exist_ok=True)
+            runtime_foreshadowing_dir.mkdir(parents=True, exist_ok=True)
 
             files = {
-                "story_bible.md": foundation.story_bible,
-                "volume_outline.md": foundation.volume_outline,
-                "book_rules.md": foundation.book_rules,
-                "current_state.md": foundation.current_state,
-                "pending_hooks.md": foundation.pending_hooks,
+                src_world_dir / "story_bible.md": foundation.story_bible,
+                src_world_dir / "volume_outline.md": foundation.volume_outline,
+                src_world_dir / "book_rules.md": foundation.book_rules,
+                runtime_world_dir / "current_state.md": foundation.current_state,
+                runtime_foreshadowing_dir / "hooks_seed.md": foundation.foreshadowing_seed,
             }
 
-            for filename, content in files.items():
-                (story_dir / filename).write_text(content, encoding="utf-8")
+            for filepath, content in files.items():
+                filepath.write_text(content, encoding="utf-8")
 
-            return f"✅ AI 设定生成完成！\n📁 位置: {story_dir}/\n已生成: {', '.join(files.keys())}"
+            generated = [
+                "src/world/story_bible.md",
+                "src/world/volume_outline.md",
+                "src/world/book_rules.md",
+                "data/world/current_state.md",
+                "data/foreshadowing/hooks_seed.md",
+            ]
+            return (
+                "✅ AI 设定生成完成！\n"
+                f"📁 位置: {novel_root}/\n"
+                f"已生成: {', '.join(generated)}"
+            )
         except Exception as e:
             logger.exception("AI generation failed")
             return f"AI 生成失败: {e}"

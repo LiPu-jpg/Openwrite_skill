@@ -1,17 +1,17 @@
 """WriterAgent - 两阶段写作 Agent
 
-从 InkOS WriterAgent 融合的核心功能：
+核心能力：
 - Phase 1: 创意写作 (temperature=0.7)
 - Phase 2: 状态结算
   - 2a. Observer: 提取本章事实
   - 2b. Settler: 合并到真相文件
 
-融合了 OpenWrite 的：
+结合本项目能力：
 - 四级大纲架构
 - 渐进压缩
 - 风格系统
 
-新增融合：
+附加能力：
 - 后置验证 (PostWriteValidator)
 - 对话指纹提取 (DialogueFingerprintExtractor)
 - 状态验证 (StateValidator)
@@ -366,36 +366,33 @@ class WriterAgent(BaseAgent):
 
 根据观察结果，更新以下真相文件：
 1. current_state.md - 世界当前状态
-2. particle_ledger.md - 资源账本（如有数值系统）
-3. pending_hooks.md - 伏笔列表
-4. chapter_summaries.md - 章节摘要
-5. subplot_board.md - 支线进度
-6. emotional_arcs.md - 情感弧线
-7. character_matrix.md - 角色关系
+2. ledger.md - 资源账本（如有数值系统）
+3. relationships.md - 角色关系
+4. （可选）foreshadowing/dag.yaml - 伏笔状态（仅摘要提示，不在本次输出中落盘）
+5. （可选）hierarchy.yaml / compressed/*.md - 章节摘要（仅摘要提示，不在本次输出中落盘）
 
 原则：
 - 只记录客观变化，不创造新内容
-- 伏笔标记为"待回收"
 - 保持简洁，每文件不超过200字更新
 - 使用 Markdown 格式输出
+- 只输出确有变化的字段
 
 输出格式：
 ```yaml
 state_updates:
   current_state: |
     [更新的世界状态]
-  particle_ledger: |
+    ledger: |
     [更新的资源账本]
-  pending_hooks: |
-    [更新的伏笔列表]
-  chapter_summary: |
-    [本章摘要]
-  subplot_board: |
-    [更新的支线进度]
-  emotional_arcs: |
-    [更新的情感弧线]
-  character_matrix: |
+    relationships: |
     [更新的角色关系]
+
+# 兼容字段（可选，同义于 ledger/relationships）
+# particle_ledger: |
+# character_matrix: |
+
+注意：对外文档与公共接口以 current_state / ledger / relationships 为准，
+历史别名仅用于兼容旧链路输入。
 ```"""
 
         user_prompt = f"""根据以下观察结果，更新真相文件：
@@ -428,14 +425,22 @@ state_updates:
         if context.get("current_state"):
             parts.append(f"## current_state.md\n{context['current_state'][:500]}\n")
 
-        if context.get("particle_ledger"):
-            parts.append(f"## particle_ledger.md\n{context['particle_ledger'][:300]}\n")
+        ledger_text = context.get("ledger") or context.get("particle_ledger")
+        if ledger_text:
+            parts.append(f"## ledger.md\n{ledger_text[:300]}\n")
 
-        if context.get("pending_hooks"):
-            parts.append(f"## pending_hooks.md\n{context['pending_hooks'][:300]}\n")
+        relationships_text = context.get("relationships") or context.get("character_matrix")
+        if relationships_text:
+            parts.append(f"## relationships.md\n{relationships_text[:300]}\n")
+
+        hooks_text = context.get("foreshadowing_summary") or context.get("pending_hooks")
+        if hooks_text:
+            parts.append(f"## foreshadowing/dag.yaml（摘要）\n{hooks_text[:300]}\n")
 
         if context.get("chapter_summaries"):
-            parts.append(f"## chapter_summaries.md\n{context['chapter_summaries'][:500]}\n")
+            parts.append(
+                f"## hierarchy.yaml / compressed/*.md（摘要）\n{context['chapter_summaries'][:500]}\n"
+            )
 
         return "\n".join(parts) if parts else "（无现有真相文件）"
 
@@ -452,25 +457,25 @@ state_updates:
         yaml_match = re.search(r"```yaml\s*\n(.*?)\n```", content, re.DOTALL)
         if yaml_match:
             yaml_content = yaml_match.group(1)
-            # 简单解析
-            current_match = re.search(
-                r"current_state:\s*\|?\s*\n(.*?)(?=\n\w|$)", yaml_content, re.DOTALL
-            )
-            if current_match:
-                result["state_updates"]["current_state"] = current_match.group(1).strip()
+            # 解析 current_state / ledger / relationships 及其兼容别名。
+            field_patterns = {
+                "current_state": r"current_state:\s*\|?\s*\n(.*?)(?=\n\w|$)",
+                "ledger": r"ledger:\s*\|?\s*\n(.*?)(?=\n\w|$)",
+                "particle_ledger": r"particle_ledger:\s*\|?\s*\n(.*?)(?=\n\w|$)",
+                "relationships": r"relationships:\s*\|?\s*\n(.*?)(?=\n\w|$)",
+                "character_matrix": r"character_matrix:\s*\|?\s*\n(.*?)(?=\n\w|$)",
+            }
 
-            summary_match = re.search(
-                r"chapter_summary:\s*\|?\s*\n(.*?)(?=\n\w|$)", yaml_content, re.DOTALL
-            )
-            if summary_match:
-                result["chapter_summary"] = summary_match.group(1).strip()
+            for field, pattern in field_patterns.items():
+                match = re.search(pattern, yaml_content, re.DOTALL)
+                if match and match.group(1).strip():
+                    result["state_updates"][field] = match.group(1).strip()
 
         return result
 
     def _post_write_validation(self, content: str) -> list:
         """Phase 1.5: 后置验证（零 LLM 成本）
 
-        从 InkOS post-write-validator.ts 融合。
         纯规则检测，禁止句式、元叙事、疲劳词等。
         """
         try:

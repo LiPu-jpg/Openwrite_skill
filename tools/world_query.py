@@ -1,6 +1,6 @@
 """世界观查询工具
 
-扫描 data/novels/{novel_id}/world/entities/*.md，返回结构化摘要。
+扫描 data/novels/{novel_id}/src/world/entities/*.md，返回结构化摘要。
 LLM 通过此工具快速了解全部世界观实体，按需再 Read 具体文件。
 
 用法:
@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from tools.frontmatter import parse_toml_front_matter
+
 
 def parse_entity(filepath: Path) -> Dict[str, Any]:
     """解析单个 Markdown 实体文件为结构化数据。
@@ -32,21 +34,29 @@ def parse_entity(filepath: Path) -> Dict[str, Any]:
         - 其他 ## = extra sections
     """
     text = filepath.read_text(encoding="utf-8")
+    meta, body = parse_toml_front_matter(text)
+    meta_relations = meta.get("related", []) if isinstance(meta.get("related"), list) else []
+
+    status_from_meta = "status" in meta
     entity: Dict[str, Any] = {
-        "id": filepath.stem,
-        "name": "",
-        "type": "",
-        "subtype": "",
-        "status": "active",
-        "description": "",
+        "id": str(meta.get("id", filepath.stem)).strip() or filepath.stem,
+        "name": str(meta.get("name", "")).strip(),
+        "type": str(meta.get("type", "")).strip(),
+        "subtype": str(meta.get("subtype", "")).strip(),
+        "status": str(meta.get("status", "active")).strip() or "active",
+        "description": str(meta.get("summary", "")).strip(),
         "rules": [],
         "features": [],
-        "relations": [],
+        "relations": _normalize_meta_relations(meta_relations),
+        "tags": list(meta.get("tags", [])) if isinstance(meta.get("tags"), list) else [],
+        "detail_refs": list(meta.get("detail_refs", []))
+        if isinstance(meta.get("detail_refs"), list)
+        else [],
         "extra_sections": {},
         "file": str(filepath),
     }
 
-    lines = text.split("\n")
+    lines = body.split("\n")
     i = 0
 
     # Skip leading blank lines / comments
@@ -64,42 +74,43 @@ def parse_entity(filepath: Path) -> Dict[str, Any]:
             break
         i += 1
 
-    # Find metadata blockquote (> type | subtype | status)
+    # Find optional legacy metadata blockquote (> type | subtype | status).
+    # Front matter may only partially fill these fields, so we still probe and
+    # only backfill missing values instead of skipping the line entirely.
     while i < len(lines):
         line = lines[i].strip()
         if not line:
             i += 1
             continue
         if line.startswith("> "):
-            meta = line[2:].strip()
-            parts = [p.strip() for p in meta.split("|")]
-            if len(parts) >= 1:
+            meta_line = line[2:].strip()
+            parts = [p.strip() for p in meta_line.split("|")]
+            if len(parts) >= 1 and not entity["type"]:
                 entity["type"] = parts[0]
-            if len(parts) >= 2:
+            if len(parts) >= 2 and not entity["subtype"]:
                 entity["subtype"] = parts[1]
-            if len(parts) >= 3:
-                entity["status"] = parts[2]
+            if len(parts) >= 3 and not status_from_meta:
+                entity["status"] = parts[2] or entity["status"]
             i += 1
             break
-        elif line.startswith("## ") or line.startswith("# "):
-            break  # No blockquote found
-        else:
+        if line.startswith("## ") or line.startswith("# "):
             break
-        i += 1  # pragma: no cover
+        break
 
     # Find description (first paragraph after metadata)
     desc_lines: List[str] = []
     # Skip blank lines
     while i < len(lines) and not lines[i].strip():
         i += 1
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-        if not stripped or stripped.startswith("## "):
-            break
-        desc_lines.append(stripped)
-        i += 1
-    entity["description"] = " ".join(desc_lines)
+    if not entity["description"]:
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            if not stripped or stripped.startswith("## "):
+                break
+            desc_lines.append(stripped)
+            i += 1
+        entity["description"] = " ".join(desc_lines)
 
     # Parse sections
     current_section = ""
@@ -114,7 +125,7 @@ def parse_entity(filepath: Path) -> Dict[str, Any]:
         elif key == "features":
             entity["features"] = section_items[:]
         elif key == "relations":
-            entity["relations"] = _parse_relations(section_items)
+            entity["relations"].extend(_parse_relations(section_items))
         elif current_section:
             content = "\n".join(section_text_lines).strip()
             if section_items:
@@ -141,6 +152,7 @@ def parse_entity(filepath: Path) -> Dict[str, Any]:
         i += 1
 
     flush_section()
+    entity["relations"] = _dedupe_relations(entity["relations"])
 
     return entity
 
@@ -149,10 +161,13 @@ def _normalize_section(name: str) -> str:
     """将段落标题归一化为字段名。"""
     mapping = {
         "规则": "rules",
+        "rules": "rules",
         "特征": "features",
+        "features": "features",
         "关联": "relations",
+        "relations": "relations",
     }
-    return mapping.get(name, "")
+    return mapping.get(name, mapping.get(name.lower(), ""))
 
 
 def _parse_relations(items: List[str]) -> List[Dict[str, str]]:
@@ -171,6 +186,39 @@ def _parse_relations(items: List[str]) -> List[Dict[str, str]]:
         else:
             relations.append({"target": item.strip(), "description": ""})
     return relations
+
+
+def _normalize_meta_relations(items: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """Normalize TOML front matter related entries to legacy relation shape."""
+    relations: List[Dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        target = str(item.get("target", "")).strip()
+        if not target:
+            continue
+        description = (
+            str(item.get("description", "")).strip()
+            or str(item.get("note", "")).strip()
+            or str(item.get("kind", "")).strip()
+        )
+        relations.append({"target": target, "description": description})
+    return relations
+
+
+def _dedupe_relations(relations: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """Preserve order while removing duplicate relation entries."""
+    deduped: List[Dict[str, str]] = []
+    seen = set()
+    for rel in relations:
+        target = str(rel.get("target", "")).strip()
+        description = str(rel.get("description", "")).strip()
+        key = (target, description)
+        if not target or key in seen:
+            continue
+        seen.add(key)
+        deduped.append({"target": target, "description": description})
+    return deduped
 
 
 def list_entities(
@@ -242,11 +290,20 @@ def get_relations_graph(
 
     all_entities = []
     all_relations = []
+    seen_relations = set()
 
     for f in sorted(entities_dir.glob("*.md")):
         entity = parse_entity(f)
         all_entities.append(entity["id"])
         for rel in entity["relations"]:
+            edge = (
+                entity["id"],
+                rel["target"],
+                rel["description"],
+            )
+            if edge in seen_relations:
+                continue
+            seen_relations.add(edge)
             all_relations.append(
                 {
                     "source": entity["id"],

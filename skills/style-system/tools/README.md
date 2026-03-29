@@ -25,7 +25,7 @@ Agent 读取 prompts/initialize_style.md
   ↓
 收集答案 + 可选参考作品
   ↓
-Write data/novels/{id}/style/fingerprint.yaml
+Write data/novels/{id}/data/style/fingerprint.yaml
 ```
 
 ### 2. 风格提取
@@ -37,7 +37,7 @@ Read 参考文本
   ↓
 分析 6 个维度（voice, language, rhythm, dialogue, humor, emotion）
   ↓
-Write data/novels/{id}/style/extraction_report.yaml
+Write data/novels/{id}/data/style/extraction_report.yaml
 ```
 
 ### 3. 风格合成
@@ -47,12 +47,12 @@ Agent 读取 prompts/compose_style.md
   ↓
 Read craft/*.yaml + craft/*.md（通用技法）
 Read data/reference_styles/{作品名}/*.md（参考风格，可选）
-Read data/novels/{id}/style/fingerprint.yaml（作品风格）
-Read data/novels/{id}/characters/ + world/（作品设定）
+Read data/novels/{id}/data/style/fingerprint.yaml（作品风格）
+Read data/novels/{id}/src/characters/ + src/world/（作品设定）
   ↓
 按优先级合成（用户覆盖 > 作品设定 > 作品风格 > 参考风格 > 通用技法）
   ↓
-Write data/novels/{id}/style/composed.md
+Write data/novels/{id}/data/style/composed.md
 ```
 
 ### 4. 风格分析
@@ -62,11 +62,11 @@ Agent 读取 prompts/analyze_style.md
   ↓
 Read 待分析文本
 Read craft/ai_patterns.yaml（AI痕迹词库）
-Read data/novels/{id}/style/composed.md（目标风格）
+Read data/novels/{id}/data/style/composed.md（目标风格）
   ↓
 分析 4 个维度 + AI痕迹检测 + 偏差分析
   ↓
-Write data/novels/{id}/style/analysis_report.yaml
+Write data/novels/{id}/data/style/analysis_report.yaml
 ```
 
 ## 为什么不迁移 Python 工具？

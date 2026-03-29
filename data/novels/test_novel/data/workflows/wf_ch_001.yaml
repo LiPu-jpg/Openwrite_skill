@@ -1,0 +1,51 @@
+novel_id: test_novel
+chapter_id: ch_001
+current_stage: review
+draft_path: /Users/jiaoziang/迁移/Openwrite/.worktrees/openwrite-agent-orchestrator/data/novels/test_novel/data/manuscript/arc_001/ch_001.md
+polished_path: ''
+review_passed: true
+review_errors: []
+review_warnings: []
+user_approved: null
+stages:
+- name: context_assembly
+  status: completed
+  started_at: '2026-03-29T00:01:10.712261'
+  completed_at: '2026-03-29T00:01:10.713139'
+  message: chapter packet assembled
+  data:
+    chapter_id: ch_001
+- name: writing
+  status: completed
+  started_at: '2026-03-29T00:01:10.713901'
+  completed_at: '2026-03-29T00:05:30.920021'
+  message: chapter written
+  data:
+    draft_path: /Users/jiaoziang/迁移/Openwrite/.worktrees/openwrite-agent-orchestrator/data/novels/test_novel/data/manuscript/arc_001/ch_001.md
+- name: review
+  status: pending
+  started_at: ''
+  completed_at: ''
+  message: ''
+  data: {}
+- name: user_confirm
+  status: pending
+  started_at: ''
+  completed_at: ''
+  message: ''
+  data: {}
+- name: styling
+  status: pending
+  started_at: ''
+  completed_at: ''
+  message: ''
+  data: {}
+- name: compression
+  status: pending
+  started_at: ''
+  completed_at: ''
+  message: ''
+  data: {}
+created_at: '2026-03-28T22:10:51.367780'
+updated_at: '2026-03-29T00:05:30.920083'
+error: 'writing: write_chapter_failed'

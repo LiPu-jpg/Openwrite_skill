@@ -78,69 +78,130 @@ chapters:
   title: 第一章：加班
   dramatic_position: 起
   summary: 程序员陈明在深夜加班赶项目，电脑蓝屏后烦躁拍键盘，指尖闪过淡蓝色光电脑自动恢复，手腕内侧浮现若隐若现的符文印记。
+  content_focus: 程序员陈明在深夜加班赶项目，电脑蓝屏后烦躁拍键盘，指尖闪过淡蓝色光电脑自动恢复，手腕内侧浮现若隐若现的符文印记。
   word_count: 4000
+  involved_characters:
+  - chen_ming
+  - zhao_lei
 - id: ch_002
   title: 第二章：精力充沛的早晨
   dramatic_position: 承
   summary: 第二天陈明精神状态异常好，连续熬夜却毫无疲态。同事赵磊调侃他是不是偷偷吃了什么保健品。午休时陈明去茶水间倒咖啡，马克杯脱手的瞬间在空中悬浮了一秒才落下，赵磊恰好没看到。陈明开始觉得不对劲。
+  content_focus: 第二天陈明精神状态异常好，连续熬夜却毫无疲态。同事赵磊调侃他是不是偷偷吃了什么保健品。午休时陈明去茶水间倒咖啡，马克杯脱手的瞬间在空中悬浮了一秒才落下，赵磊恰好没看到。陈明开始觉得不对劲。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
+  - lin_yue
 - id: ch_003
   title: 第三章：会议室事故
   dramatic_position: 转
   summary: 组长林月召开项目评审会议，陈明因为紧张导致能力失控——投影仪爆火花、白板笔乱飞。混乱中陈明注意到手腕符文剧烈发光，他终于确认那不是幻觉。会后他躲进厕所检查符文，内心从震惊转为恐慌。
+  content_focus: 组长林月召开项目评审会议，陈明因为紧张导致能力失控——投影仪爆火花、白板笔乱飞。混乱中陈明注意到手腕符文剧烈发光，他终于确认那不是幻觉。会后他躲进厕所检查符文，内心从震惊转为恐慌。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - lin_yue
+  - zhao_lei
 - id: ch_004
   title: 第四章：程序员的逻辑
   dramatic_position: 合
   summary: 陈明用程序员的思维方式分析能力规律——记录触发条件、建立电子表格、尝试复现。他发现能力与情绪波动和「逻辑链思维」有关：越是像写代码一样清晰构建步骤，能力就越可控。他在出租屋成功用意念把可乐罐悬浮了十秒，既兴奋又害怕，决定先隐瞒这件事。
+  content_focus: 陈明用程序员的思维方式分析能力规律——记录触发条件、建立电子表格、尝试复现。他发现能力与情绪波动和「逻辑链思维」有关：越是像写代码一样清晰构建步骤，能力就越可控。他在出租屋成功用意念把可乐罐悬浮了十秒，既兴奋又害怕，决定先隐瞒这件事。
   word_count: 3500
+  involved_characters:
+  - chen_ming
 - id: ch_005
   title: 第五章：术法修Bug
   dramatic_position: 起
   summary: 陈明开始偷偷利用术法能力辅助工作——用微弱感知力追踪代码逻辑，用念力在脑中同时运行多个调试线程。效率暴增但必须演得不那么明显。赵磊注意到陈明最近修bug快得离谱，在工位后偷偷观察，差点撞见陈明对着屏幕比划手势。
+  content_focus: 陈明开始偷偷利用术法能力辅助工作——用微弱感知力追踪代码逻辑，用念力在脑中同时运行多个调试线程。效率暴增但必须演得不那么明显。赵磊注意到陈明最近修bug快得离谱，在工位后偷偷观察，差点撞见陈明对着屏幕比划手势。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
 - id: ch_006
   title: 第六章：线上事故
   dramatic_position: 承
   summary: 周五深夜服务器严重故障，全组被叫回来救火。常规排查两小时无进展，林月急得拍桌子。陈明在卫生间偷偷用术法感知数据流，精准定位到故障节点。他编了个理由说是「直觉」，虽然救了火，但监控日志里留下无法解释的异常波动。
+  content_focus: 周五深夜服务器严重故障，全组被叫回来救火。常规排查两小时无进展，林月急得拍桌子。陈明在卫生间偷偷用术法感知数据流，精准定位到故障节点。他编了个理由说是「直觉」，虽然救了火，但监控日志里留下无法解释的异常波动。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
+  - lin_yue
 - id: ch_007
   title: 第七章：996与修炼
   dramatic_position: 合
   summary: 陈明找到工作和修炼的微妙平衡——早晨通勤时地铁冥想，上班低调用能力提升效率，下班后在出租屋练习控制。赵磊虽觉得陈明变了但抓不到证据，林月因团队效率提升给陈明加了绩效。结尾陈明看着手腕符文自嘲：别人觉醒是拯救世界，他的觉醒是更高效地996。
+  content_focus: 陈明找到工作和修炼的微妙平衡——早晨通勤时地铁冥想，上班低调用能力提升效率，下班后在出租屋练习控制。赵磊虽觉得陈明变了但抓不到证据，林月因团队效率提升给陈明加了绩效。结尾陈明看着手腕符文自嘲：别人觉醒是拯救世界，他的觉醒是更高效地996。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
+  - lin_yue
 - id: ch_008
   title: 第八章：赵磊的直觉
   dramatic_position: 起
   summary: 赵磊决定调查陈明。他开始记录陈明的异常行为：修bug速度、眼神变化、手势等。在茶水间「偶遇」陈明自言自语（实际在练习控制术法），赵磊开始怀疑。
+  content_focus: 赵磊决定调查陈明。他开始记录陈明的异常行为：修bug速度、眼神变化、手势等。在茶水间「偶遇」陈明自言自语（实际在练习控制术法），赵磊开始怀疑。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
 - id: ch_009
   title: 第九章：绩效与风险
   dramatic_position: 承
   summary: 林月注意到陈明的绩效异常优秀，开始关注。她查看了服务器日志，发现了无法解释的异常波动。陈明不知道自己已经被注意。
+  content_focus: 林月注意到陈明的绩效异常优秀，开始关注。她查看了服务器日志，发现了无法解释的异常波动。陈明不知道自己已经被注意。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - lin_yue
+  - zhao_lei
 - id: ch_010
   title: 第十章：暴露危机
   dramatic_position: 转
   summary: 林月约陈明单独谈话，暗示知道他「有些不一样」。陈明紧张到差点失控，符文微微发光。他用程序员的冷静分析应对，勉强过关。但危机已经埋下。
+  content_focus: 林月约陈明单独谈话，暗示知道他「有些不一样」。陈明紧张到差点失控，符文微微发光。他用程序员的冷静分析应对，勉强过关。但危机已经埋下。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - lin_yue
 - id: ch_011
   title: 第十一章：深夜练习
   dramatic_position: 合
   summary: 陈明决定更谨慎地练习能力。他在深夜公园里练习悬浮物体，被夜跑的路人看到影子。新的危机：能力暴露的风险在增加。
+  content_focus: 陈明决定更谨慎地练习能力。他在深夜公园里练习悬浮物体，被夜跑的路人看到影子。新的危机：能力暴露的风险在增加。
   word_count: 3500
+  involved_characters:
+  - chen_ming
 - id: ch_012
   title: 第十二章：日志追踪
   dramatic_position: 起
   summary: 技术部门开始调查服务器日志异常。林月配合调查，陈明担心术法痕迹被发现。赵磊主动提出帮忙分析，意外成为陈明的帮手。
+  content_focus: 技术部门开始调查服务器日志异常。林月配合调查，陈明担心术法痕迹被发现。赵磊主动提出帮忙分析，意外成为陈明的帮手。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
+  - lin_yue
 - id: ch_013
   title: 第十三章：赵磊的抉择
   dramatic_position: 承
   summary: 赵磊发现了陈明的秘密。他没有揭发，而是选择找陈明直接问清楚。两个好友深夜长谈，赵磊选择帮助陈明隐藏这个秘密。
+  content_focus: 赵磊发现了陈明的秘密。他没有揭发，而是选择找陈明直接问清楚。两个好友深夜长谈，赵磊选择帮助陈明隐藏这个秘密。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
 - id: ch_014
   title: 第十四章：暂时的平衡
   dramatic_position: 合
   summary: 在赵磊的帮助下，日志异常被解释为「系统波动」。陈明暂时安全，但术法使用更加谨慎。林月开始真正关注这个特别的下属。新的平衡建立，但更大的危机正在酝酿。
+  content_focus: 在赵磊的帮助下，日志异常被解释为「系统波动」。陈明暂时安全，但术法使用更加谨慎。林月开始真正关注这个特别的下属。新的平衡建立，但更大的危机正在酝酿。
   word_count: 3500
+  involved_characters:
+  - chen_ming
+  - zhao_lei
+  - lin_yue

@@ -1,3 +1,26 @@
++++
+id = "zhao_lei"
+name = "赵磊"
+tier = "重要配角"
+age = 26
+occupation = "前端程序员"
+summary = "外向健谈的同组好友和气氛担当，也是最早察觉陈明异常的人。"
+tags = ["都市", "职场", "好友", "重要配角"]
+detail_refs = ["基本信息", "外貌", "性格", "背景", "当前状态", "关系"]
+
+[[related]]
+target = "chen_ming"
+kind = "friend"
+weight = 0.9
+note = "最早察觉异常的好友"
+
+[[related]]
+target = "lin_yue"
+kind = "superior"
+weight = 0.56
+note = "直属上司，平时最怕被她点名"
++++
+
 # 赵磊
 
 ## 基本信息

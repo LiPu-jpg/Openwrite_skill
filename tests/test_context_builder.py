@@ -9,6 +9,7 @@
 - 动态压缩逻辑
 """
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -32,15 +33,14 @@ def project_dir(tmp_path):
     """创建最小项目结构"""
     novel_id = "test_novel"
     base = tmp_path / "data" / "novels" / novel_id
-    (base / "outline").mkdir(parents=True)
-    (base / "characters" / "cards").mkdir(parents=True)
-    (base / "characters" / "profiles").mkdir(parents=True)
-    (base / "world" / "entities").mkdir(parents=True)
-    (base / "foreshadowing").mkdir(parents=True)
-    (base / "style").mkdir(parents=True)
-    (base / "manuscript" / "arc_001").mkdir(parents=True)
-    (base / "compressed").mkdir(parents=True)
-    (base / "workflows").mkdir(parents=True)
+    (base / "src" / "characters").mkdir(parents=True)
+    (base / "src" / "world" / "entities").mkdir(parents=True)
+    (base / "data" / "characters" / "cards").mkdir(parents=True)
+    (base / "data" / "foreshadowing").mkdir(parents=True)
+    (base / "data" / "style").mkdir(parents=True)
+    (base / "data" / "manuscript" / "arc_001").mkdir(parents=True)
+    (base / "data" / "compressed").mkdir(parents=True)
+    (base / "data" / "workflows").mkdir(parents=True)
     (tmp_path / "craft").mkdir(parents=True)
     return tmp_path, novel_id
 
@@ -87,7 +87,7 @@ class TestFileLoading:
 
     def test_load_yaml_valid(self, builder, project_dir):
         root, novel_id = project_dir
-        yaml_path = root / "data" / "novels" / novel_id / "outline" / "test.yaml"
+        yaml_path = root / "data" / "novels" / novel_id / "data" / "test.yaml"
         yaml_path.write_text("key: value\nlist:\n  - a\n  - b\n", encoding="utf-8")
         result = builder._load_yaml(yaml_path)
         assert result == {"key": "value", "list": ["a", "b"]}
@@ -141,6 +141,87 @@ class TestMarkdownHelpers:
     def test_extract_list_empty_section(self, builder):
         assert builder._extract_md_list("## 无关\n内容", "性格") == []
 
+    def test_parse_character_profile_with_toml_front_matter(self, builder, project_dir):
+        root, novel_id = project_dir
+        profile_path = root / "data" / "novels" / novel_id / "src" / "characters" / "chen_ming.md"
+        profile_path.write_text(
+            """+++
+id = "char_chen_ming"
+name = "陈明"
+tier = "主角"
+summary = "普通程序员觉醒术法后被迫在两个世界夹缝求生。"
+tags = ["都市", "异能"]
+detail_refs = ["background", "appearance", "personality"]
+
+[[related]]
+target = "zhao_lei"
+kind = "friend"
+weight = 0.82
+note = "最信任的同事"
++++
+
+# 陈明
+
+## background
+普通程序员，偶然觉醒术法。
+
+## appearance
+中等偏瘦，黑眼圈明显。
+
+## personality
+- 理工科思维
+- 嘴硬心软
+""",
+            encoding="utf-8",
+        )
+
+        profile = builder._parse_character_profile(profile_path, "chen_ming")
+
+        assert profile is not None
+        assert profile.character_id == "char_chen_ming"
+        assert profile.name == "陈明"
+        assert profile.tier.value == "主角"
+        assert profile.summary == "普通程序员觉醒术法后被迫在两个世界夹缝求生。"
+        assert profile.tags == ["都市", "异能"]
+        assert profile.detail_refs == ["background", "appearance", "personality"]
+        assert profile.related[0]["target"] == "zhao_lei"
+        assert profile.backstory == "普通程序员，偶然觉醒术法。"
+        assert profile.personality == ["理工科思维", "嘴硬心软"]
+
+    def test_character_profile_context_text_includes_index_fields(self, builder, project_dir):
+        root, novel_id = project_dir
+        profile_path = root / "data" / "novels" / novel_id / "src" / "characters" / "chen_ming.md"
+        profile_path.write_text(
+            """+++
+id = "char_chen_ming"
+name = "陈明"
+tier = "主角"
+summary = "普通程序员觉醒术法后被迫在两个世界夹缝求生。"
+tags = ["都市", "异能"]
+detail_refs = ["background", "appearance", "personality"]
+
+[[related]]
+target = "zhao_lei"
+kind = "friend"
+note = "最信任的同事"
++++
+
+# 陈明
+
+## background
+普通程序员，偶然觉醒术法。
+""",
+            encoding="utf-8",
+        )
+
+        profile = builder._parse_character_profile(profile_path, "chen_ming")
+
+        assert profile is not None
+        context_text = profile.to_context_text()
+        assert "标签: 都市、异能" in context_text
+        assert "细节索引: background、appearance、personality" in context_text
+        assert "关联: zhao_lei（最信任的同事）" in context_text
+
 
 # ── Chapter index parsing ────────────────────────────────────
 
@@ -175,7 +256,7 @@ class TestOutlineLoading:
 
     def test_load_hierarchy_with_data(self, builder, project_dir):
         root, novel_id = project_dir
-        outline_path = root / "data" / "novels" / novel_id / "outline" / "hierarchy.yaml"
+        outline_path = root / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
         data = {
             "story_info": {"title": "测试小说", "theme": "成长"},
             "arcs": [{"id": "arc_001", "title": "第一篇"}],
@@ -195,13 +276,39 @@ class TestOutlineLoading:
     def test_hierarchy_caching(self, builder, project_dir):
         """二次加载应使用缓存（仅当已有数据时）"""
         root, novel_id = project_dir
-        outline_path = root / "data" / "novels" / novel_id / "outline" / "hierarchy.yaml"
+        outline_path = root / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
         import yaml as _yaml
         data = {"story_info": {"title": "缓存测试"}, "chapters": []}
         outline_path.write_text(_yaml.dump(data, allow_unicode=True), encoding="utf-8")
         h1 = builder._load_outline_hierarchy()
         h2 = builder._load_outline_hierarchy()
         assert h1 is h2
+
+    def test_load_hierarchy_prefers_src_outline_over_conflicting_runtime_cache(self, builder, project_dir):
+        root, novel_id = project_dir
+        src_outline = root / "data" / "novels" / novel_id / "src" / "outline.md"
+        src_outline.write_text(
+            "# 源大纲\n\n## 第一篇\n\n### 第一节\n\n#### 源标题\n\n> 内容焦点: 源摘要\n",
+            encoding="utf-8",
+        )
+
+        hierarchy_path = root / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
+        hierarchy_path.write_text(
+            yaml.dump(
+                {
+                    "story_info": {"title": "缓存大纲"},
+                    "chapters": [{"id": "ch_001", "title": "缓存标题", "summary": "缓存摘要"}],
+                },
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+
+        hierarchy = builder._load_outline_hierarchy()
+
+        assert hierarchy.master.title == "源大纲"
+        assert hierarchy.chapters[0].title == "源标题"
+        assert hierarchy.chapters[0].content_focus == "源摘要"
 
 
 # ── Foreshadowing state ──────────────────────────────────────
@@ -218,7 +325,7 @@ class TestForeshadowingState:
 
     def test_state_from_dag(self, builder, project_dir):
         root, novel_id = project_dir
-        dag_path = root / "data" / "novels" / novel_id / "foreshadowing" / "dag.yaml"
+        dag_path = root / "data" / "novels" / novel_id / "data" / "foreshadowing" / "dag.yaml"
         dag_data = {
             "nodes": [
                 {"id": "f001", "content": "伏笔A", "status": "埋伏", "created_at": "ch_001"},
@@ -295,7 +402,7 @@ class TestRecentChapters:
 
     def test_load_recent_chapters(self, builder, project_dir):
         root, novel_id = project_dir
-        ms_dir = root / "data" / "novels" / novel_id / "manuscript"
+        ms_dir = root / "data" / "novels" / novel_id / "data" / "manuscript" / "arc_001"
         ms_dir.mkdir(parents=True, exist_ok=True)
         (ms_dir / "ch_001.md").write_text("第一章的内容" * 50, encoding="utf-8")
         (ms_dir / "ch_002.md").write_text("第二章的内容" * 50, encoding="utf-8")
@@ -321,7 +428,7 @@ class TestBuildGenerationContext:
 
     def test_build_with_outline(self, builder, project_dir):
         root, novel_id = project_dir
-        outline_path = root / "data" / "novels" / novel_id / "outline" / "hierarchy.yaml"
+        outline_path = root / "data" / "novels" / novel_id / "data" / "hierarchy.yaml"
         data = {
             "story_info": {"title": "测试"},
             "chapters": [
@@ -334,3 +441,44 @@ class TestBuildGenerationContext:
 
         context = builder.build_generation_context("ch_002", window_size=1)
         assert context.chapter_id == "ch_002"
+
+    def test_build_auto_refreshes_stale_outline_hierarchy(self, project_dir):
+        root, novel_id = project_dir
+        src_outline = root / "data" / "novels" / novel_id / "src" / "outline.md"
+        src_outline.write_text(
+            "# 测试小说\n\n## 第一篇\n\n### 第一节\n\n#### 旧标题\n\n> 内容焦点: 旧摘要\n",
+            encoding="utf-8",
+        )
+
+        from tools.outline_sync import sync_outline_to_hierarchy
+
+        sync_outline_to_hierarchy(src_outline.parent, src_outline.parent.parent / "data")
+
+        src_outline.write_text(
+            "# 测试小说\n\n## 第一篇\n\n### 第一节\n\n#### 新标题\n\n> 内容焦点: 新摘要\n",
+            encoding="utf-8",
+        )
+        hierarchy_path = src_outline.parent.parent / "data" / "hierarchy.yaml"
+        stale_time = src_outline.stat().st_mtime - 10
+        os.utime(hierarchy_path, (stale_time, stale_time))
+
+        builder = ContextBuilder(project_root=root, novel_id=novel_id)
+        context = builder.build_generation_context("ch_001")
+
+        assert context.current_chapter is not None
+        assert context.current_chapter.title == "新标题"
+
+    def test_build_context_can_use_src_outline_without_runtime_hierarchy(self, project_dir):
+        root, novel_id = project_dir
+        src_outline = root / "data" / "novels" / novel_id / "src" / "outline.md"
+        src_outline.write_text(
+            "# 测试小说\n\n## 第一篇\n\n### 第一节\n\n#### 直接源标题\n\n> 内容焦点: 直接源摘要\n",
+            encoding="utf-8",
+        )
+
+        builder = ContextBuilder(project_root=root, novel_id=novel_id)
+        context = builder.build_generation_context("ch_001")
+
+        assert context.current_chapter is not None
+        assert context.current_chapter.title == "直接源标题"
+        assert context.current_chapter.content_focus == "直接源摘要"

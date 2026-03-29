@@ -33,9 +33,10 @@
 
 ### 6. 7个真相文件
 - current_state.md - 世界状态
-- particle_ledger.md - 资源账本
-- pending_hooks.md - 伏笔列表
-- chapter_summaries.md - 章节摘要
+- ledger.md - 资源账本
+- relationships.md - 角色关系矩阵
+- foreshadowing/dag.yaml - 伏笔状态
+- hierarchy.yaml + compressed/* - 章节摘要
 - subplot_board.md - 支线进度
 - emotional_arcs.md - 情感弧线
 - character_matrix.md - 角色关系矩阵

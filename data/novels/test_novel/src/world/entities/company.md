@@ -1,6 +1,27 @@
-# 公司（互联网科技公司）
++++
+id = "company"
+name = "公司（互联网科技公司）"
+type = "location"
+subtype = "building"
+status = "active"
+summary = "陈明所在的互联网科技公司，典型 996 加班环境，也是多数事件的主舞台。"
+tags = ["公司", "都市", "主舞台", "职场"]
+detail_refs = ["规则", "特征", "关联"]
 
-> location | building | active
+[[related]]
+target = "chen_ming"
+kind = "employee"
+weight = 0.93
+note = "主角日常工作的主场景"
+
+[[related]]
+target = "lin_yue"
+kind = "manager"
+weight = 0.71
+note = "直属管理者长期驻场"
++++
+
+# 公司（互联网科技公司）
 
 陈明所在的互联网科技公司，典型的996加班文化，故事主要发生地。
 开放式工位布局缺乏隐私，术法使用需要格外小心。有监控系统和服务器日志，

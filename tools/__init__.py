@@ -6,14 +6,14 @@
 - DataQueries: 数据查询
 - TextChunker: 大文本智能切割
 - StyleExtractionPipeline: 风格分批提取流水线
-- TruthFilesManager: 真相文件管理（融合 InkOS）
-- LLM Client: 统一 LLM 调用（融合 InkOS）
-- Agent: 内置 Agent 基类（融合 InkOS）
-- PostWriteValidator: 后置验证（融合 InkOS）
-- StateValidator: 状态验证（融合 InkOS）
-- DialogueFingerprintExtractor: 对话指纹提取（融合 InkOS）
-- RadarAgent: 市场分析（融合 InkOS）
-- ArchitectAgent: AI 大纲生成（融合 InkOS）
+- TruthFilesManager: 真相文件管理
+- LLM Client: 统一 LLM 调用
+- Agent: 内置 Agent 基类
+- PostWriteValidator: 后置验证
+- StateValidator: 状态验证
+- DialogueFingerprintExtractor: 对话指纹提取
+- RadarAgent: 市场分析
+- ArchitectAgent: AI 大纲生成
 - Wizard: 交互式引导
 """
 
@@ -26,6 +26,7 @@ from .truth_manager import TruthFilesManager, TruthFiles, StateSnapshot
 from .post_validator import PostWriteValidator
 from .state_validator import StateValidator
 from .dialogue_fingerprint import DialogueFingerprintExtractor
+from .chapter_assembler import ChapterAssemblerV2, ChapterAssemblyPacket
 
 __all__ = [
     "ContextBuilder",
@@ -40,4 +41,6 @@ __all__ = [
     "PostWriteValidator",
     "StateValidator",
     "DialogueFingerprintExtractor",
+    "ChapterAssemblerV2",
+    "ChapterAssemblyPacket",
 ]
