@@ -15,6 +15,7 @@ MAX_SESSION_BYTES = 4096
 MAX_SUMMARY_BYTES = 1024
 MAX_TURN_CONTENT_BYTES = 256
 MAX_COMPRESSION_MARKERS = 12
+MAX_WORKING_MEMORY_KEYS = 128
 DEFAULT_ACTIVE_AGENT = "dante"
 
 
@@ -230,13 +231,15 @@ class SessionStateStore:
             )
             for turn in state.recent_turns
         ]
-        state.working_memory = self._compact_mapping(state.working_memory, turn_budget)
+        state.working_memory = self._compact_mapping(
+            state.working_memory, turn_budget, MAX_WORKING_MEMORY_KEYS
+        )
         state.open_questions = self._compact_string_list(state.open_questions, turn_budget)
         state.recent_files = self._compact_string_list(state.recent_files, turn_budget)
         state.last_action = self._truncate_text(state.last_action, turn_budget, keep_tail=False)
 
     def _compact_metadata_fields(self, state: DanteSessionState) -> None:
-        state.working_memory = self._compact_mapping(state.working_memory, 32)
+        state.working_memory = self._compact_mapping(state.working_memory, 32, 32)
         state.open_questions = self._compact_string_list(state.open_questions, 32)[:4]
         state.recent_files = self._compact_string_list(state.recent_files, 32)[:4]
         state.last_action = self._truncate_text(state.last_action, 32, keep_tail=False)
@@ -256,7 +259,7 @@ class SessionStateStore:
             ]
         else:
             state.recent_turns = []
-        state.working_memory = self._compact_mapping(state.working_memory, 64)
+        state.working_memory = self._compact_mapping(state.working_memory, 64, 32)
         state.open_questions = self._compact_string_list(state.open_questions, 64)
         state.recent_files = self._compact_string_list(state.recent_files, 64)
         state.last_action = self._truncate_text(state.last_action, 64, keep_tail=False)
@@ -297,12 +300,12 @@ class SessionStateStore:
             session_id=str(data.get("session_id", self.novel_id)),
             active_agent=str(data.get("active_agent", DEFAULT_ACTIVE_AGENT)),
             conversation_summary=str(data.get("conversation_summary", "")),
-            recent_turns=self._normalize_turns(data.get("recent_turns", [])),
+            recent_turns=self._coerce_turn_list(data.get("recent_turns", [])),
             working_memory=self._normalize_mapping(data.get("working_memory", {})),
-            open_questions=self._normalize_str_list(data.get("open_questions", [])),
-            recent_files=self._normalize_str_list(data.get("recent_files", [])),
+            open_questions=self._coerce_string_list(data.get("open_questions", [])),
+            recent_files=self._coerce_string_list(data.get("recent_files", [])),
             last_action=str(data.get("last_action", "")),
-            compression_markers=self._normalize_marker_list(
+            compression_markers=self._coerce_marker_list(
                 data.get("compression_markers", [])
             ),
             updated_at=str(data.get("updated_at", "")),
@@ -324,8 +327,13 @@ class SessionStateStore:
         return not required_keys.issubset(data.keys())
 
     def _normalize_turns(self, value: Any) -> list[SessionTurn]:
-        if not isinstance(value, list):
+        return self._coerce_turn_list(value)
+
+    def _coerce_turn_list(self, value: Any) -> list[SessionTurn]:
+        if value is None:
             return []
+        if not isinstance(value, list):
+            value = [value]
         turns: list[SessionTurn] = []
         for item in value:
             if isinstance(item, SessionTurn):
@@ -337,6 +345,13 @@ class SessionStateStore:
                         content=str(item.get("content", "")),
                     )
                 )
+            else:
+                turns.append(
+                    SessionTurn(
+                        role="unknown",
+                        content=self._stringify_scalar(item),
+                    )
+                )
         return turns
 
     def _normalize_mapping(self, value: Any) -> dict[str, Any]:
@@ -345,13 +360,16 @@ class SessionStateStore:
         return dict(value)
 
     def _normalize_str_list(self, value: Any) -> list[str]:
-        if not isinstance(value, list):
-            return []
-        return [str(item) for item in value]
+        return self._coerce_string_list(value)
 
     def _normalize_marker_list(self, value: Any) -> list[CompressionMarker]:
-        if not isinstance(value, list):
+        return self._coerce_marker_list(value)
+
+    def _coerce_marker_list(self, value: Any) -> list[CompressionMarker]:
+        if value is None:
             return []
+        if not isinstance(value, list):
+            value = [value]
         markers: list[CompressionMarker] = []
         for item in value:
             if isinstance(item, CompressionMarker):
@@ -427,9 +445,11 @@ class SessionStateStore:
         except (TypeError, ValueError):
             return 0
 
-    def _compact_mapping(self, value: dict[str, Any], budget: int) -> dict[str, Any]:
+    def _compact_mapping(
+        self, value: dict[str, Any], budget: int, max_keys: int
+    ) -> dict[str, Any]:
         compacted: dict[str, Any] = {}
-        for key, item in value.items():
+        for key, item in list(value.items())[-max_keys:]:
             compacted[str(key)] = self._compact_value(item, budget)
         return compacted
 

@@ -8,6 +8,7 @@ from tools.agent.session_state import (
     SessionTurn,
     SessionStateStore,
     MAX_RECENT_TURNS,
+    MAX_COMPRESSION_MARKERS,
     MAX_SESSION_BYTES,
 )
 
@@ -246,7 +247,7 @@ def test_repeated_save_load_cycles_bound_compression_markers(tmp_path: Path):
     persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
 
     assert persisted_size <= MAX_SESSION_BYTES
-    assert len(state.compression_markers) <= 16
+    assert len(state.compression_markers) <= MAX_COMPRESSION_MARKERS
 
 
 def test_repeat_save_is_idempotent_after_compression(tmp_path: Path):
@@ -380,6 +381,20 @@ def test_save_stringifies_non_string_lists_and_scalars(tmp_path: Path):
     assert reloaded["last_action"] == "12345"
 
 
+def test_save_compresses_wide_working_memory(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {f"k{index:03d}": "v" for index in range(2000)}
+
+    store.save(state)
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+    reloaded = store.load_or_create()
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert len(reloaded.working_memory) <= len(state.working_memory)
+
+
 def test_load_or_create_refreshes_compression_timestamp_on_load(tmp_path: Path, monkeypatch):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)
@@ -434,6 +449,37 @@ def test_load_or_create_repairs_non_utf8_corrupt_bytes(tmp_path: Path):
 
     assert state.session_id == "demo"
     assert reloaded["session_id"] == "demo"
+
+
+def test_load_or_create_coerces_scalar_listish_fields(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": "dante",
+                "conversation_summary": "",
+                "recent_turns": {"role": "user", "content": "hello"},
+                "working_memory": {},
+                "open_questions": {"prompt": "ask"},
+                "recent_files": {"path": "chapter.md"},
+                "last_action": "summarize",
+                "compression_markers": {"compressed_at": "2026-03-30T10:00:00"},
+                "updated_at": "",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+
+    assert [turn.content for turn in state.recent_turns] == ["hello"]
+    assert state.open_questions == ["{'prompt': 'ask'}"]
+    assert state.recent_files == ["{'path': 'chapter.md'}"]
+    assert len(state.compression_markers) == 1
 
 
 def test_load_or_create_normalizes_malformed_compression_markers(tmp_path: Path):
