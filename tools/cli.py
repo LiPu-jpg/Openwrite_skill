@@ -56,6 +56,7 @@ def main():
 
     _add_init_command(subparsers)
     _add_goethe_command(subparsers)
+    _add_dante_command(subparsers)
     _add_sync_command(subparsers)
     _add_write_command(subparsers)
     _add_multi_write_command(subparsers)
@@ -106,6 +107,8 @@ def _dispatch(args) -> int:
         return _cmd_radar(args)
     elif args.command == "goethe":
         return _cmd_goethe(args)
+    elif args.command == "dante":
+        return _cmd_dante(args)
     elif args.command == "status":
         return _cmd_status(args)
     elif args.command == "doctor":
@@ -128,6 +131,11 @@ def _add_goethe_command(subparsers):
     """goethe 命令 - 交互式引导"""
     p = subparsers.add_parser("goethe", help="交互式引导（推荐新手使用）")
     p.add_argument("--novel-id", help="小说 ID（可选）")
+
+
+def _add_dante_command(subparsers):
+    """dante 命令 - 新入口占位"""
+    subparsers.add_parser("dante", help="Dante 入口（占位，待实现）")
 
 
 def _add_sync_command(subparsers):
@@ -218,8 +226,8 @@ def _add_doctor_command(subparsers):
 
 
 def _add_agent_command(subparsers):
-    """agent 命令 - 使用内置 Agent"""
-    p = subparsers.add_parser("agent", help="使用主编排 Agent（自然语言交互）")
+    """agent 命令 - 已退役"""
+    p = subparsers.add_parser("agent", help="已退役：请改用 openwrite dante")
     p.add_argument("instruction", nargs="?", default="查看项目状态", help="自然语言指令")
     p.add_argument("--max-turns", type=int, default=20, help="最大循环次数")
     p.add_argument("--quiet", action="store_true", help="静默模式")
@@ -816,6 +824,12 @@ def _cmd_goethe(args) -> int:
     return run_goethe()
 
 
+def _cmd_dante(args) -> int:
+    """Dante 入口占位"""
+    logger.info("Dante 入口已保留，后续实现将在此接入。")
+    return 0
+
+
 def _cmd_radar(args) -> int:
     """市场分析"""
     import asyncio
@@ -944,35 +958,9 @@ def _cmd_doctor(args) -> int:
 
 
 def _cmd_agent(args) -> int:
-    """使用确定性 Orchestrator"""
-    project_root = Path.cwd()
-    config = _load_config(project_root)
-    if not config:
-        logger.error("未找到 novel_config.yaml，请先运行 openwrite init")
-        return 1
-
-    novel_id = config.get("novel_id") or "current"
-
-    try:
-        from tools.agent.orchestrator import OpenWriteOrchestrator
-        from tools.agent.tool_runtime import build_tool_executors
-
-        orchestrator = OpenWriteOrchestrator(
-            project_root=project_root,
-            novel_id=novel_id,
-            tool_executors=build_tool_executors(project_root),
-        )
-        return orchestrator.run_cli(
-            instruction=args.instruction,
-            quiet=args.quiet,
-            max_turns=args.max_turns,
-        )
-    except ImportError as e:
-        logger.error(f"Agent 模块未安装: {e}")
-        return 1
-    except Exception as e:
-        logger.error(f"Agent 执行失败: {e}")
-        return 1
+    """agent 命令 - 已退役"""
+    logger.error("openwrite agent 已退役，请改用 openwrite dante。")
+    return 1
 
 
 def build_cli_tool_executors(project_root: Path) -> dict[str, Callable[[dict], dict]]:

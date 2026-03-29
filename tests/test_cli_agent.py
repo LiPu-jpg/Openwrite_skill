@@ -57,79 +57,27 @@ def test_main_rejects_legacy_wizard_command(monkeypatch: pytest.MonkeyPatch):
     assert exc.value.code == 2
 
 
-def test_cmd_agent_routes_through_orchestrator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
-    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+def test_main_accepts_dante_command(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "dante"])
 
-    expected_tool_executors = {"get_status": lambda args: {"ok": True}}
-    tool_executor_calls: list[Path] = []
+    called = {"value": False}
 
-    def fake_build_tool_executors(project_root: Path):
-        tool_executor_calls.append(project_root)
-        return expected_tool_executors
+    def fake_dispatch(args):
+        called["value"] = True
+        assert args.command == "dante"
+        return 0
 
-    orchestrator_calls: dict[str, object] = {}
+    monkeypatch.setattr(cli_module, "_dispatch", fake_dispatch)
 
-    class FakeOrchestrator:
-        def __init__(self, project_root: Path, novel_id: str, tool_executors):
-            orchestrator_calls["project_root"] = project_root
-            orchestrator_calls["novel_id"] = novel_id
-            orchestrator_calls["tool_executors"] = tool_executors
-
-        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
-            orchestrator_calls["instruction"] = instruction
-            orchestrator_calls["quiet"] = quiet
-            orchestrator_calls["max_turns"] = max_turns
-            return 0
-
-    monkeypatch.setattr(tool_runtime_module, "build_tool_executors", fake_build_tool_executors)
-    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
-
-    result = cli_module._cmd_agent(_fake_args("查看项目状态", max_turns=7, quiet=True))
-
-    assert result == 0
-    assert tool_executor_calls == [tmp_path]
-    assert orchestrator_calls["project_root"] == tmp_path
-    assert orchestrator_calls["novel_id"] == "demo"
-    assert orchestrator_calls["tool_executors"] is expected_tool_executors
-    assert orchestrator_calls["instruction"] == "查看项目状态"
-    assert orchestrator_calls["quiet"] is True
-    assert orchestrator_calls["max_turns"] == 7
+    assert cli_module.main() == 0
+    assert called["value"] is True
 
 
-def test_cmd_agent_does_not_require_llm_client_setup(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
-    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
-    monkeypatch.setattr(tool_runtime_module, "build_tool_executors", lambda project_root: {})
-
-    import tools.llm as llm_module
-
-    def forbidden(*args, **kwargs):
-        raise AssertionError("LLM client setup should not be touched")
-
-    monkeypatch.setattr(llm_module, "LLMClient", forbidden)
-    monkeypatch.setattr(llm_module.LLMConfig, "from_env", classmethod(lambda cls: forbidden()))
-
-    class FakeOrchestrator:
-        def __init__(self, project_root: Path, novel_id: str, tool_executors):
-            self.project_root = project_root
-            self.novel_id = novel_id
-            self.tool_executors = tool_executors
-
-        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
-            return 0
-
-    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
-
-    assert cli_module._cmd_agent(_fake_args("基础设定准备好了")) == 0
-
-
-def test_cmd_agent_requires_project_config_before_initializing_orchestrator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+
     called = {"value": False}
 
     def forbidden(*args, **kwargs):
@@ -138,45 +86,13 @@ def test_cmd_agent_requires_project_config_before_initializing_orchestrator(
 
     monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", forbidden)
 
-    assert cli_module._cmd_agent(_fake_args("查看项目状态")) == 1
+    with caplog.at_level("ERROR"):
+        result = cli_module._cmd_agent(_fake_args("查看项目状态"))
+
+    assert result == 1
     assert called["value"] is False
-
-
-def test_cmd_agent_passes_instruction_and_returns_orchestrator_exit_code(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
-    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
-    monkeypatch.setattr(
-        tool_runtime_module,
-        "build_tool_executors",
-        lambda project_root: {"get_status": lambda args: {"ok": True}},
-    )
-
-    run_cli_calls: dict[str, object] = {}
-
-    class FakeOrchestrator:
-        def __init__(self, project_root: Path, novel_id: str, tool_executors):
-            self.project_root = project_root
-            self.novel_id = novel_id
-            self.tool_executors = tool_executors
-
-        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
-            run_cli_calls["instruction"] = instruction
-            run_cli_calls["quiet"] = quiet
-            run_cli_calls["max_turns"] = max_turns
-            return 17
-
-    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
-
-    result = cli_module._cmd_agent(_fake_args("写 ch_001", max_turns=9, quiet=False))
-
-    assert result == 17
-    assert run_cli_calls == {
-        "instruction": "写 ch_001",
-        "quiet": False,
-        "max_turns": 9,
-    }
+    assert "openwrite agent 已退役" in caplog.text
+    assert "openwrite dante" in caplog.text
 
 
 def test_run_cli_status_instruction_is_read_only(tmp_path: Path):
