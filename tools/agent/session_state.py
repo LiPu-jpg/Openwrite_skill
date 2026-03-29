@@ -12,6 +12,8 @@ import yaml
 
 MAX_RECENT_TURNS = 6
 MAX_SESSION_BYTES = 4096
+MAX_SUMMARY_BYTES = 1024
+MAX_TURN_CONTENT_BYTES = 256
 DEFAULT_ACTIVE_AGENT = "dante"
 
 
@@ -75,13 +77,9 @@ class SessionStateStore:
             self.save(state)
             return state
 
-        if not self._is_valid_data(data):
-            state = self._default_state()
-            self.save(state)
-            return state
-
+        needs_upgrade = self._needs_schema_upgrade(data)
         state = self._from_dict(data)
-        if self._compress_if_needed(state):
+        if needs_upgrade or self._compress_if_needed(state):
             self.save(state)
         return state
 
@@ -112,41 +110,70 @@ class SessionStateStore:
         state.updated_at = datetime.now().isoformat()
 
     def _compress_if_needed(self, state: DanteSessionState) -> bool:
-        reason = self._compression_reason(state)
-        if reason is None:
+        changed = self._compress_by_count(state)
+        changed |= self._compress_for_size(state)
+        return changed
+
+    def _compress_by_count(self, state: DanteSessionState) -> bool:
+        if len(state.recent_turns) <= MAX_RECENT_TURNS:
             return False
 
         dropped_turns = 0
-        while len(state.recent_turns) > 1 and self._compression_reason(state) is not None:
-            if len(state.recent_turns) > MAX_RECENT_TURNS:
-                drop_count = len(state.recent_turns) - MAX_RECENT_TURNS
-            else:
-                drop_count = 1
-
+        while len(state.recent_turns) > MAX_RECENT_TURNS:
+            drop_count = len(state.recent_turns) - MAX_RECENT_TURNS
             old_turns = state.recent_turns[:drop_count]
             kept_turns = state.recent_turns[drop_count:]
-            summary_block = "\n".join(self._render_turn(turn) for turn in old_turns)
-
-            if state.conversation_summary:
-                state.conversation_summary = (
-                    f"{state.conversation_summary}\n{summary_block}"
-                )
-            else:
-                state.conversation_summary = summary_block
-
+            summary_block = "\n".join(self._render_turn(turn, MAX_TURN_CONTENT_BYTES) for turn in old_turns)
+            state.conversation_summary = self._append_summary(
+                state.conversation_summary, summary_block
+            )
             state.recent_turns = kept_turns
             dropped_turns += len(old_turns)
 
-        if dropped_turns == 0:
-            return False
-
-        reason_label = self._compression_reason(state) or reason
         state.compression_markers.append(
             CompressionMarker(
                 compressed_at=state.updated_at or datetime.now().isoformat(),
                 dropped_turns=dropped_turns,
                 kept_turns=len(state.recent_turns),
-                reason=reason_label,
+                reason="count",
+            )
+        )
+        return True
+
+    def _compress_for_size(self, state: DanteSessionState) -> bool:
+        if self._estimate_size(state) <= MAX_SESSION_BYTES:
+            return False
+
+        changed = False
+        summary_budget = MAX_SUMMARY_BYTES
+        turn_budget = MAX_TURN_CONTENT_BYTES
+
+        while self._estimate_size(state) > MAX_SESSION_BYTES:
+            self._compact_text_fields(state, summary_budget, turn_budget)
+            changed = True
+            if self._estimate_size(state) <= MAX_SESSION_BYTES:
+                break
+
+            if summary_budget > 64:
+                summary_budget = max(64, summary_budget // 2)
+            if turn_budget > 32:
+                turn_budget = max(32, turn_budget // 2)
+
+            if summary_budget == 64 and turn_budget == 32:
+                break
+
+        if self._estimate_size(state) > MAX_SESSION_BYTES:
+            self._hard_truncate_state(state)
+
+        if self._estimate_size(state) > MAX_SESSION_BYTES:
+            raise ValueError("session state exceeded MAX_SESSION_BYTES after compression")
+
+        state.compression_markers.append(
+            CompressionMarker(
+                compressed_at=state.updated_at or datetime.now().isoformat(),
+                dropped_turns=0,
+                kept_turns=len(state.recent_turns),
+                reason="size",
             )
         )
         return True
@@ -158,6 +185,13 @@ class SessionStateStore:
             return "size"
         return None
 
+    def _append_summary(self, existing: str, addition: str) -> str:
+        if not addition:
+            return existing
+        if not existing:
+            return addition
+        return f"{existing}\n{addition}"
+
     def _estimate_size(self, state: DanteSessionState) -> int:
         return len(
             yaml.safe_dump(
@@ -165,10 +199,59 @@ class SessionStateStore:
             ).encode("utf-8")
         )
 
-    def _render_turn(self, turn: SessionTurn) -> str:
+    def _render_turn(self, turn: SessionTurn, content_limit: int | None = None) -> str:
         role = turn.role or "unknown"
-        content = turn.content
+        content = (
+            self._truncate_text(turn.content, content_limit, keep_tail=False)
+            if content_limit is not None
+            else turn.content
+        )
         return f"{role}: {content}".rstrip()
+
+    def _compact_text_fields(
+        self, state: DanteSessionState, summary_budget: int, turn_budget: int
+    ) -> None:
+        state.conversation_summary = self._truncate_text(
+            state.conversation_summary, summary_budget, keep_tail=True
+        )
+        state.recent_turns = [
+            SessionTurn(
+                role=turn.role,
+                content=self._truncate_text(turn.content, turn_budget, keep_tail=False),
+            )
+            for turn in state.recent_turns
+        ]
+
+    def _hard_truncate_state(self, state: DanteSessionState) -> None:
+        state.conversation_summary = self._truncate_text(
+            state.conversation_summary, 128, keep_tail=True
+        )
+        if state.recent_turns:
+            last_turn = state.recent_turns[-1]
+            state.recent_turns = [
+                SessionTurn(
+                    role=last_turn.role,
+                    content=self._truncate_text(last_turn.content, 128, keep_tail=False),
+                )
+            ]
+        else:
+            state.recent_turns = []
+
+    def _truncate_text(
+        self, text: str, limit: int, *, keep_tail: bool
+    ) -> str:
+        if limit <= 0 or not text:
+            return ""
+
+        encoded = text.encode("utf-8")
+        if len(encoded) <= limit:
+            return text
+
+        if keep_tail:
+            truncated = encoded[-limit:]
+        else:
+            truncated = encoded[:limit]
+        return truncated.decode("utf-8", errors="ignore")
 
     def _to_dict(self, state: DanteSessionState) -> dict[str, Any]:
         return asdict(state)
@@ -189,7 +272,7 @@ class SessionStateStore:
             updated_at=str(data.get("updated_at", "")),
         )
 
-    def _is_valid_data(self, data: dict[str, Any]) -> bool:
+    def _needs_schema_upgrade(self, data: dict[str, Any]) -> bool:
         required_keys = {
             "session_id",
             "active_agent",
@@ -202,7 +285,7 @@ class SessionStateStore:
             "compression_markers",
             "updated_at",
         }
-        return required_keys.issubset(data.keys())
+        return not required_keys.issubset(data.keys())
 
     def _normalize_turns(self, value: Any) -> list[SessionTurn]:
         if not isinstance(value, list):
@@ -241,9 +324,20 @@ class SessionStateStore:
                 markers.append(
                     CompressionMarker(
                         compressed_at=str(item.get("compressed_at", "")),
-                        dropped_turns=int(item.get("dropped_turns", 0)),
-                        kept_turns=int(item.get("kept_turns", 0)),
-                        reason=str(item.get("reason", "count")),
+                        dropped_turns=self._safe_int(item.get("dropped_turns", 0)),
+                        kept_turns=self._safe_int(item.get("kept_turns", 0)),
+                        reason=self._normalize_reason(item.get("reason")),
                     )
                 )
         return markers
+
+    def _normalize_reason(self, value: Any) -> Literal["count", "size"]:
+        if value == "size":
+            return "size"
+        return "count"
+
+    def _safe_int(self, value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0

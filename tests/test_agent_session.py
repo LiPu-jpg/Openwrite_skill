@@ -101,6 +101,35 @@ def test_load_or_create_restores_valid_existing_session(tmp_path: Path):
     assert state.updated_at == "2026-03-30T10:05:00"
 
 
+def test_load_or_create_upgrades_partial_session_without_data_loss(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "legacy-1",
+                "conversation_summary": "legacy summary",
+                "recent_turns": [
+                    {"role": "user", "content": "old question"},
+                ],
+                "updated_at": "2026-03-29T09:00:00",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+
+    assert state.session_id == "legacy-1"
+    assert state.conversation_summary == "legacy summary"
+    assert [turn.content for turn in state.recent_turns] == ["old question"]
+    assert state.active_agent == "dante"
+    assert state.working_memory == {}
+    assert yaml.safe_load(store.path.read_text(encoding="utf-8"))["session_id"] == "legacy-1"
+
+
 def test_load_or_create_surfaces_filesystem_errors(tmp_path: Path, monkeypatch):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)
@@ -139,19 +168,19 @@ def test_load_or_create_surfaces_filesystem_errors(tmp_path: Path, monkeypatch):
 
 def test_save_compresses_huge_turns_by_size(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
-    huge_text = "x" * (MAX_SESSION_BYTES // 2)
+    huge_text = "x" * (MAX_SESSION_BYTES)
     state = DanteSessionState(session_id="demo")
     state.recent_turns = [
-        SessionTurn(role="user", content=f"first {huge_text}"),
+        SessionTurn(role="user", content="first"),
         SessionTurn(role="assistant", content=f"second {huge_text}"),
     ]
 
     store.save(state)
     loaded = store.load_or_create()
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
 
-    assert len(loaded.recent_turns) == 1
-    assert loaded.recent_turns[0].content.startswith("second ")
-    assert "first" in loaded.conversation_summary
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert loaded.recent_turns
     assert loaded.compression_markers[-1].reason == "size"
 
 
@@ -176,6 +205,45 @@ def test_repeat_save_is_idempotent_after_compression(tmp_path: Path):
     assert second.conversation_summary == first_summary
     assert second.recent_turns == first_turns
     assert second.compression_markers == first_markers
+
+
+def test_load_or_create_normalizes_malformed_compression_markers(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": "dante",
+                "conversation_summary": "",
+                "recent_turns": [],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [
+                    {
+                        "compressed_at": "2026-03-30T10:00:00",
+                        "dropped_turns": "not-an-int",
+                        "kept_turns": 2,
+                        "reason": "bogus",
+                    },
+                    "skip-me",
+                ],
+                "updated_at": "",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+
+    assert len(state.compression_markers) == 1
+    assert state.compression_markers[0].dropped_turns == 0
+    assert state.compression_markers[0].kept_turns == 2
+    assert state.compression_markers[0].reason == "count"
 
 
 def test_load_or_create_repairs_corrupt_session_file(tmp_path: Path):
