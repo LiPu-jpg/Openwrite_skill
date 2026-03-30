@@ -259,16 +259,27 @@ class DanteChatAgent:
         if react_agent is None:
             return
         combined_tools = _build_dante_tool_definitions()
+        canonical_tools = {tool.name: tool for tool in combined_tools}
         if hasattr(react_agent, "tools"):
             existing_tools = list(getattr(react_agent, "tools", []) or [])
-            existing_names = {
-                getattr(tool, "name", "")
-                for tool in existing_tools
-                if getattr(tool, "name", "")
-            }
-            merged_tools = existing_tools + [
-                tool for tool in combined_tools if tool.name not in existing_names
-            ]
+            merged_tools = []
+            seen: set[str] = set()
+            for tool in existing_tools:
+                tool_name = getattr(tool, "name", "")
+                if not tool_name:
+                    merged_tools.append(tool)
+                    continue
+                canonical_tool = canonical_tools.get(tool_name)
+                if canonical_tool is not None:
+                    merged_tools.append(canonical_tool)
+                    seen.add(tool_name)
+                else:
+                    merged_tools.append(tool)
+            for tool_name, canonical_tool in canonical_tools.items():
+                if tool_name not in seen and all(
+                    getattr(tool, "name", "") != tool_name for tool in merged_tools
+                ):
+                    merged_tools.append(canonical_tool)
             react_agent.tools = merged_tools
         if self._combined_tool_executors() and hasattr(react_agent, "_register_tool_executors"):
             react_agent._register_tool_executors(self._combined_tool_executors())
@@ -296,9 +307,6 @@ class DanteChatAgent:
         session_state = self._require_session_state()
         book_state = self._require_book_state()
         context_messages: list[Message] = []
-
-        if self.recovery_prompt:
-            context_messages.append(Message("assistant", self.recovery_prompt))
 
         if session_state.conversation_summary:
             context_messages.append(

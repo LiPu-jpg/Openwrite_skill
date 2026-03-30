@@ -7,6 +7,7 @@ import pytest
 import yaml
 
 from tools.agent.book_state import BookStage
+from tools.agent.react import ToolDefinition
 from tools.agent.session_state import DanteSessionState, SessionTurn
 
 
@@ -299,7 +300,9 @@ def test_dante_persists_user_turn_when_react_raises(tmp_path: Path):
     }
 
 
-def test_dante_context_messages_do_not_repeat_current_instruction(tmp_path: Path):
+def test_dante_model_context_excludes_recovery_prompt_but_keeps_structured_state(
+    tmp_path: Path,
+):
     from tools.agent.dante import DanteChatAgent
 
     _write_session_state(tmp_path, "demo")
@@ -321,10 +324,12 @@ def test_dante_context_messages_do_not_repeat_current_instruction(tmp_path: Path
     context_text = "\n".join(
         message.content for message in react_agent.calls[0]["kwargs"]["context_messages"]
     )
-    assert "查看当前状态" not in context_text
+    assert "Dante 已恢复，可以继续上次的长会话。" not in context_text
+    assert "会话: session-123 / active_agent=dante" not in context_text
     assert "会话摘要" in context_text
     assert "最近轮次" in context_text
     assert "rolling_outline" in context_text
+    assert "current" not in context_text
 
 
 def test_dante_injected_real_react_agent_gets_tool_definitions_and_surface(
@@ -347,7 +352,21 @@ def test_dante_injected_real_react_agent_gets_tool_definitions_and_surface(
     react_agent = ReActAgent(
         client=RecordingClient(),
         model="demo",
-        tools=[],
+        tools=[
+            ToolDefinition(
+                name="get_status",
+                description="旧描述",
+                parameters={
+                    "type": "object",
+                    "properties": {"legacy": {"type": "string"}},
+                },
+            ),
+            ToolDefinition(
+                name="retain_me",
+                description="保留的外部工具",
+                parameters={"type": "object", "properties": {}},
+            ),
+        ],
         system_prompt="系统提示",
     )
 
@@ -372,10 +391,17 @@ def test_dante_injected_real_react_agent_gets_tool_definitions_and_surface(
         },
     )
 
-    assert {tool.name for tool in react_agent.tools} >= {
-        "get_status",
-        "summarize_ideation",
-        "run_chapter_preflight",
+    tool_map = {tool.name: tool for tool in react_agent.tools}
+    assert tool_map["get_status"].description == "获取项目状态概览。"
+    assert tool_map["get_status"].parameters == {
+        "type": "object",
+        "properties": {},
     }
+    assert tool_map["summarize_ideation"].description == "汇总当前收集到的想法，生成会话共识摘要。"
+    assert tool_map["summarize_ideation"].parameters == {
+        "type": "object",
+        "properties": {},
+    }
+    assert tool_map["retain_me"].description == "保留的外部工具"
     assert hasattr(react_agent, "_tool_get_status")
     assert hasattr(react_agent, "_tool_summarize_ideation")
