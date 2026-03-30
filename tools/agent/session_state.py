@@ -155,6 +155,7 @@ class SessionStateStore:
         if self._estimate_size(state) <= MAX_SESSION_BYTES:
             return False
 
+        initial_turn_count = len(state.recent_turns)
         changed = False
         if state.recent_turns:
             moved_turns = 0
@@ -169,10 +170,11 @@ class SessionStateStore:
                 changed = True
                 self._bound_compression_markers(state)
                 if self._estimate_size(state) <= MAX_SESSION_BYTES:
+                    removed_turns = max(0, initial_turn_count - len(state.recent_turns))
                     state.compression_markers.append(
                         CompressionMarker(
                             compressed_at=datetime.now().isoformat(),
-                            dropped_turns=moved_turns,
+                            dropped_turns=removed_turns,
                             kept_turns=len(state.recent_turns),
                             reason="size",
                         )
@@ -208,10 +210,11 @@ class SessionStateStore:
         if self._estimate_size(state) > MAX_SESSION_BYTES:
             raise ValueError("session state exceeded MAX_SESSION_BYTES after compression")
 
+        removed_turns = max(0, initial_turn_count - len(state.recent_turns))
         state.compression_markers.append(
             CompressionMarker(
                 compressed_at=datetime.now().isoformat(),
-                dropped_turns=0,
+                dropped_turns=removed_turns,
                 kept_turns=len(state.recent_turns),
                 reason="size",
             )
@@ -264,22 +267,24 @@ class SessionStateStore:
 
     def _compact_metadata_fields(self, state: DanteSessionState) -> None:
         working_budget = MAX_WORKING_MEMORY_KEYS
-        list_budget = 8
+        list_item_budget = 8
         while True:
             state.working_memory = self._compact_mapping(
                 state.working_memory, 32, working_budget
             )
             state.open_questions = self._compact_string_list(
-                state.open_questions, list_budget
+                state.open_questions, list_item_budget
             )
-            state.recent_files = self._compact_string_list(state.recent_files, list_budget)
+            state.recent_files = self._compact_string_list(
+                state.recent_files, list_item_budget
+            )
             state.last_action = self._truncate_text(
                 state.last_action, 32, keep_tail=False
             )
             if self._estimate_size(state) <= MAX_SESSION_BYTES or working_budget <= 1:
                 break
             working_budget = max(1, working_budget // 2)
-            list_budget = max(1, list_budget // 2)
+            list_item_budget = max(1, list_item_budget // 2)
         self._bound_compression_markers(state)
 
     def _hard_truncate_state(self, state: DanteSessionState) -> None:
@@ -300,6 +305,9 @@ class SessionStateStore:
         state.open_questions = self._compact_string_list(state.open_questions, 64)
         state.recent_files = self._compact_string_list(state.recent_files, 64)
         state.last_action = self._truncate_text(state.last_action, 64, keep_tail=False)
+        state.compression_markers = self._coerce_marker_list(state.compression_markers)[-1:]
+        if self._estimate_size(state) > MAX_SESSION_BYTES:
+            state.compression_markers = []
 
     def _truncate_text(
         self, text: str, limit: int, *, keep_tail: bool
@@ -320,8 +328,10 @@ class SessionStateStore:
 
     def _to_dict(self, state: DanteSessionState) -> dict[str, Any]:
         data = asdict(state)
-        data["session_id"] = self._normalize_scalar(data["session_id"], self.novel_id)
-        data["active_agent"] = self._normalize_scalar(
+        data["session_id"] = self._normalize_identifier_scalar(
+            data["session_id"], self.novel_id
+        )
+        data["active_agent"] = self._normalize_structural_scalar(
             data["active_agent"], DEFAULT_ACTIVE_AGENT
         )
         data["conversation_summary"] = self._normalize_scalar(
@@ -331,7 +341,13 @@ class SessionStateStore:
         data["open_questions"] = self._sanitize_yaml_value(data["open_questions"])
         data["recent_files"] = self._sanitize_yaml_value(data["recent_files"])
         data["last_action"] = self._normalize_scalar(data["last_action"], "")
-        data["updated_at"] = self._normalize_scalar(data["updated_at"], "")
+        data["compression_markers"] = [
+            asdict(marker)
+            for marker in self._coerce_marker_list(data["compression_markers"])
+        ]
+        data["updated_at"] = self._normalize_structural_scalar(
+            data["updated_at"], ""
+        )
         return data
 
     def _tighten_serialized_state(self, state: DanteSessionState) -> None:
@@ -343,8 +359,10 @@ class SessionStateStore:
 
     def _from_dict(self, data: dict[str, Any]) -> DanteSessionState:
         return DanteSessionState(
-            session_id=self._normalize_scalar(data.get("session_id"), self.novel_id),
-            active_agent=self._normalize_scalar(
+            session_id=self._normalize_identifier_scalar(
+                data.get("session_id"), self.novel_id
+            ),
+            active_agent=self._normalize_structural_scalar(
                 data.get("active_agent"), DEFAULT_ACTIVE_AGENT
             ),
             conversation_summary=self._normalize_scalar(
@@ -358,7 +376,9 @@ class SessionStateStore:
             compression_markers=self._coerce_marker_list(
                 data.get("compression_markers", [])
             ),
-            updated_at=self._normalize_scalar(data.get("updated_at"), ""),
+            updated_at=self._normalize_structural_scalar(
+                data.get("updated_at"), ""
+            ),
         )
 
     def _needs_schema_upgrade(self, data: dict[str, Any]) -> bool:
@@ -398,24 +418,41 @@ class SessionStateStore:
             value = [value]
         markers: list[CompressionMarker] = []
         for item in value:
-            if isinstance(item, CompressionMarker):
-                markers.append(item)
-            elif isinstance(item, dict):
-                markers.append(
-                    CompressionMarker(
-                        compressed_at=self._normalize_scalar(
-                            item.get("compressed_at"), ""
-                        ),
-                        dropped_turns=self._safe_int(item.get("dropped_turns", 0)),
-                        kept_turns=self._safe_int(item.get("kept_turns", 0)),
-                        reason=self._normalize_reason(item.get("reason")),
-                    )
-                )
-        return markers
+            marker = self._coerce_marker(item)
+            if marker is not None:
+                markers.append(marker)
+        return markers[-MAX_COMPRESSION_MARKERS:]
+
+    def _coerce_marker(self, value: Any) -> CompressionMarker | None:
+        if isinstance(value, CompressionMarker):
+            compressed_at = value.compressed_at
+            dropped_turns = value.dropped_turns
+            kept_turns = value.kept_turns
+            reason = value.reason
+        elif isinstance(value, dict):
+            compressed_at = value.get("compressed_at")
+            dropped_turns = value.get("dropped_turns", 0)
+            kept_turns = value.get("kept_turns", 0)
+            reason = value.get("reason")
+        else:
+            return None
+
+        return CompressionMarker(
+            compressed_at=self._truncate_text(
+                self._normalize_scalar(compressed_at, ""),
+                MAX_STRUCTURAL_TEXT_BYTES,
+                keep_tail=False,
+            ),
+            dropped_turns=self._safe_int(dropped_turns),
+            kept_turns=self._safe_int(kept_turns),
+            reason=self._normalize_reason(reason),
+        )
 
     def _normalize_state_for_persistence(self, state: DanteSessionState) -> None:
-        state.session_id = self._normalize_scalar(state.session_id, self.novel_id)
-        state.active_agent = self._normalize_scalar(
+        state.session_id = self._normalize_identifier_scalar(
+            state.session_id, self.novel_id
+        )
+        state.active_agent = self._normalize_structural_scalar(
             state.active_agent, DEFAULT_ACTIVE_AGENT
         )
         state.conversation_summary = self._normalize_scalar(
@@ -426,7 +463,7 @@ class SessionStateStore:
         state.open_questions = self._coerce_string_list(state.open_questions)
         state.recent_files = self._coerce_string_list(state.recent_files)
         state.last_action = self._normalize_scalar(state.last_action, "")
-        state.updated_at = self._normalize_scalar(state.updated_at, "")
+        state.updated_at = self._normalize_structural_scalar(state.updated_at, "")
         state.compression_markers = self._coerce_marker_list(state.compression_markers)
         self._bound_compression_markers(state)
 
@@ -476,8 +513,7 @@ class SessionStateStore:
         return turns
 
     def _bound_compression_markers(self, state: DanteSessionState) -> None:
-        if len(state.compression_markers) > MAX_COMPRESSION_MARKERS:
-            state.compression_markers = state.compression_markers[-MAX_COMPRESSION_MARKERS:]
+        state.compression_markers = self._coerce_marker_list(state.compression_markers)
 
     def _normalize_reason(self, value: Any) -> Literal["count", "size"]:
         if value == "size":
@@ -486,7 +522,7 @@ class SessionStateStore:
 
     def _safe_int(self, value: Any) -> int:
         try:
-            return int(value)
+            return max(0, int(value))
         except (TypeError, ValueError):
             return 0
 
@@ -500,8 +536,13 @@ class SessionStateStore:
             compacted[self._normalize_mapping_key(key, compacted)] = self._compact_value(item, budget)
         return compacted
 
-    def _compact_string_list(self, value: list[str], budget: int) -> list[str]:
-        return [self._truncate_text(item, budget, keep_tail=False) for item in value[-8:]]
+    def _compact_string_list(
+        self, value: list[str], item_budget: int, max_items: int = 8
+    ) -> list[str]:
+        return [
+            self._truncate_text(item, item_budget, keep_tail=False)
+            for item in value[-max_items:]
+        ]
 
     def _compact_value(self, value: Any, budget: int) -> Any:
         if isinstance(value, str):
@@ -552,8 +593,28 @@ class SessionStateStore:
         if value is None:
             return default
         if isinstance(value, str):
+            if value == "":
+                return default
             return value
         return str(value)
+
+    def _normalize_structural_scalar(self, value: Any, default: str) -> str:
+        return self._truncate_text(
+            self._normalize_scalar(value, default),
+            MAX_STRUCTURAL_TEXT_BYTES,
+            keep_tail=False,
+        )
+
+    def _normalize_identifier_scalar(self, value: Any, default: str) -> str:
+        normalized = self._normalize_scalar(value, default)
+        if len(normalized.encode("utf-8")) <= MAX_STRUCTURAL_TEXT_BYTES:
+            return normalized
+
+        digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:10]
+        suffix = f"~{digest}"
+        budget = MAX_STRUCTURAL_TEXT_BYTES - len(suffix.encode("utf-8"))
+        prefix = self._truncate_text(normalized, max(budget, 0), keep_tail=False)
+        return f"{prefix}{suffix}" if prefix else suffix[-MAX_STRUCTURAL_TEXT_BYTES:]
 
     def _enforce_size_after_marker(self, state: DanteSessionState) -> None:
         while self._estimate_size(state) > MAX_SESSION_BYTES and len(state.compression_markers) > 1:

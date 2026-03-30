@@ -203,6 +203,45 @@ def test_save_by_size_preserves_older_turn_content_in_summary(tmp_path: Path):
     assert loaded.recent_turns[-1].content == "tail"
 
 
+def test_save_by_size_records_moved_turn_count(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    huge_text = "x" * (MAX_SESSION_BYTES)
+    state = DanteSessionState(session_id="demo")
+    state.recent_turns = [
+        SessionTurn(role="user", content=f"older {huge_text}"),
+        SessionTurn(role="assistant", content="tail"),
+    ]
+    state.working_memory = {"notes": "y" * (MAX_SESSION_BYTES // 2)}
+
+    store.save(state)
+    loaded = store.load_or_create()
+
+    assert loaded.compression_markers[-1].reason == "size"
+    assert loaded.compression_markers[-1].dropped_turns >= 1
+    assert "older" in loaded.conversation_summary
+
+
+def test_save_by_size_records_moved_turn_count_after_extra_compaction(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    huge_text = "x" * MAX_SESSION_BYTES
+    state = DanteSessionState(session_id="demo")
+    state.recent_turns = [
+        SessionTurn(role="user", content=f"older {huge_text}"),
+        SessionTurn(role="assistant", content="tail"),
+    ]
+    state.working_memory = {"notes": "y" * MAX_SESSION_BYTES}
+    state.open_questions = ["q" * MAX_SESSION_BYTES]
+    state.recent_files = ["file-" + ("z" * MAX_SESSION_BYTES)]
+    state.last_action = "w" * (MAX_SESSION_BYTES // 2)
+
+    store.save(state)
+    loaded = store.load_or_create()
+
+    assert loaded.compression_markers[-1].reason == "size"
+    assert loaded.compression_markers[-1].dropped_turns >= 1
+    assert "older" in loaded.conversation_summary
+
+
 def test_save_compresses_oversized_metadata_payload(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     huge_text = "x" * (MAX_SESSION_BYTES)
@@ -265,6 +304,45 @@ def test_repeated_save_load_cycles_bound_compression_markers(tmp_path: Path):
 
     assert persisted_size <= MAX_SESSION_BYTES
     assert len(state.compression_markers) <= MAX_COMPRESSION_MARKERS
+
+
+def test_load_or_create_repairs_complete_file_with_too_many_markers(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": "dante",
+                "conversation_summary": "summary",
+                "recent_turns": [],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [
+                    {
+                        "compressed_at": f"2026-03-30T10:00:{index:02d}",
+                        "dropped_turns": 1,
+                        "kept_turns": 1,
+                        "reason": "count",
+                    }
+                    for index in range(MAX_COMPRESSION_MARKERS + 4)
+                ],
+                "updated_at": "2026-03-30T10:05:00",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert len(state.compression_markers) == MAX_COMPRESSION_MARKERS
+    assert len(reloaded["compression_markers"]) == MAX_COMPRESSION_MARKERS
+    assert reloaded["compression_markers"][0]["compressed_at"].endswith(":04")
 
 
 def test_repeat_save_is_idempotent_after_compression(tmp_path: Path):
@@ -474,6 +552,41 @@ def test_save_compresses_oversized_turn_role(tmp_path: Path):
     assert persisted_size <= MAX_SESSION_BYTES
 
 
+def test_save_repairs_oversized_identity_scalars(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    huge_text = "s" * (MAX_SESSION_BYTES * 2)
+    state = DanteSessionState(session_id=huge_text)
+    state.active_agent = "a" * (MAX_SESSION_BYTES * 2)
+
+    store.save(state)
+
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+    reloaded = store.load_or_create()
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert len(reloaded.session_id.encode("utf-8")) <= 64
+    assert len(reloaded.active_agent.encode("utf-8")) <= 64
+
+
+def test_save_preserves_distinct_long_session_ids(tmp_path: Path):
+    prefix = "shared-session-prefix-" + ("s" * 120)
+    first_store = SessionStateStore(tmp_path / "one", "demo")
+    second_store = SessionStateStore(tmp_path / "two", "demo")
+
+    first_state = DanteSessionState(session_id=f"{prefix}-one")
+    second_state = DanteSessionState(session_id=f"{prefix}-two")
+
+    first_store.save(first_state)
+    second_store.save(second_state)
+
+    first_loaded = first_store.load_or_create()
+    second_loaded = second_store.load_or_create()
+
+    assert len(first_loaded.session_id.encode("utf-8")) <= 64
+    assert len(second_loaded.session_id.encode("utf-8")) <= 64
+    assert first_loaded.session_id != second_loaded.session_id
+
+
 def test_save_compresses_oversized_nested_working_memory_key_name(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     state = DanteSessionState(session_id="demo")
@@ -635,6 +748,38 @@ def test_load_or_create_repairs_null_scalars_without_string_none(tmp_path: Path)
     assert reloaded["conversation_summary"] == ""
 
 
+def test_load_or_create_repairs_empty_required_scalars(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "",
+                "active_agent": "",
+                "conversation_summary": "",
+                "recent_turns": [],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [],
+                "updated_at": "",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert state.session_id == "demo"
+    assert state.active_agent == "dante"
+    assert reloaded["session_id"] == "demo"
+    assert reloaded["active_agent"] == "dante"
+
+
 def test_load_or_create_normalizes_null_compression_marker_timestamp(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)
@@ -785,6 +930,82 @@ def test_load_or_create_normalizes_malformed_compression_markers(tmp_path: Path)
     assert state.compression_markers[0].dropped_turns == 0
     assert state.compression_markers[0].kept_turns == 2
     assert state.compression_markers[0].reason == "count"
+
+
+def test_load_or_create_repairs_oversized_compression_marker_payload(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": "dante",
+                "conversation_summary": "",
+                "recent_turns": [],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [
+                    {
+                        "compressed_at": "m" * (MAX_SESSION_BYTES * 2),
+                        "dropped_turns": 1,
+                        "kept_turns": 0,
+                        "reason": "size",
+                    }
+                ],
+                "updated_at": "",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert len(state.compression_markers) == 1
+    assert len(state.compression_markers[0].compressed_at.encode("utf-8")) < MAX_SESSION_BYTES
+    assert len(reloaded["compression_markers"][0]["compressed_at"].encode("utf-8")) < MAX_SESSION_BYTES
+
+
+def test_load_or_create_repairs_oversized_top_level_scalars(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "s" * (MAX_SESSION_BYTES * 2),
+                "active_agent": "a" * (MAX_SESSION_BYTES * 2),
+                "conversation_summary": "",
+                "recent_turns": [],
+                "working_memory": {},
+                "open_questions": [],
+                "recent_files": [],
+                "last_action": "",
+                "compression_markers": [],
+                "updated_at": "u" * (MAX_SESSION_BYTES * 2),
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert len(state.session_id.encode("utf-8")) <= 64
+    assert len(state.active_agent.encode("utf-8")) <= 64
+    assert len(state.updated_at.encode("utf-8")) <= 64
+    assert len(reloaded["session_id"].encode("utf-8")) <= 64
+    assert len(reloaded["active_agent"].encode("utf-8")) <= 64
+    assert len(reloaded["updated_at"].encode("utf-8")) <= 64
 
 
 def test_load_or_create_repairs_corrupt_session_file(tmp_path: Path):
