@@ -329,6 +329,8 @@ def test_dante_model_context_excludes_recovery_prompt_but_keeps_structured_state
     assert "会话摘要" in context_text
     assert "最近轮次" in context_text
     assert "rolling_outline" in context_text
+    assert "等待用户确认当前可写范围" in context_text
+    assert "generate_outline_draft" in context_text
     assert "current" not in context_text
 
 

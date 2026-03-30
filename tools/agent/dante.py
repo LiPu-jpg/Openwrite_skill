@@ -350,7 +350,9 @@ class DanteChatAgent:
                     f"arc={book_state.current_arc or '未设置'}, "
                     f"section={book_state.current_section or '未设置'}, "
                     f"chapter={book_state.current_chapter or '未设置'}, "
-                    f"pending={book_state.pending_confirmation or '无'}"
+                    f"pending={book_state.pending_confirmation or '无'}, "
+                    f"blocking={book_state.blocking_reason or '无'}, "
+                    f"last_action={book_state.last_agent_action or '无'}"
                 ),
             )
         )
