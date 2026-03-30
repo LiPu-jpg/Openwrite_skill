@@ -49,6 +49,32 @@ def test_cmd_goethe_routes_to_goethe_runner(monkeypatch: pytest.MonkeyPatch):
     assert calls["count"] == 1
 
 
+def test_build_prompt_session_falls_back_without_prompt_toolkit(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import tools.goethe as goethe_module
+
+    real_import = builtins.__import__
+    prompts: list[str] = []
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("prompt_toolkit"):
+            raise ImportError("prompt_toolkit missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt="": prompts.append(prompt) or "exit",
+    )
+
+    session = goethe_module.build_prompt_session()
+
+    assert session.prompt("🕯️ Dante> ") == "exit"
+    assert prompts == ["🕯️ Dante> "]
+
+
 def test_main_rejects_legacy_wizard_command(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(sys, "argv", ["openwrite", "wizard"])
 

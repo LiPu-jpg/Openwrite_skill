@@ -22,9 +22,18 @@ def is_exit_command(text: str) -> bool:
 
 
 def build_prompt_session(history=None, *, prompt_style: dict[str, str] | None = None):
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.history import InMemoryHistory
-    from prompt_toolkit.styles import Style
+    try:
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.history import InMemoryHistory
+        from prompt_toolkit.styles import Style
+    except ImportError:
+        logger.warning("prompt_toolkit not installed, falling back to basic input() shell")
+
+        class FallbackPromptSession:
+            def prompt(self, text: str) -> str:
+                return input(text)
+
+        return FallbackPromptSession()
 
     history = history or InMemoryHistory()
     style = Style.from_dict(prompt_style or {"prompt": "#ansibrightblue bold"})
