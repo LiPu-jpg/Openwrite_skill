@@ -234,7 +234,7 @@ AI 生成世界观设定：
 💡 inspiration/ 文件夹可以放灵感文件
 
 下一步：
-- openwrite agent "写第一章"  # AI 写作
+- openwrite dante             # 启动长期会话主 agent
 - openwrite status            # 查看状态
 - openwrite radar             # 市场分析
 ```
