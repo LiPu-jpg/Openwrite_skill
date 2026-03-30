@@ -531,6 +531,9 @@ class OpenWriteOrchestrator:
         )
 
     def _handle_outline_generation(self, text: str) -> OrchestratorResult:
+        if self.state.stage == BookStage.DISCOVERY:
+            return self._ensure_ideation_summary_confirmation(blocked=True)
+
         if self.state.pending_confirmation == "ideation_summary" or (
             self._read_text(self.story_planning_store.ideation_path).strip()
             and not self.story_planning_store.ideation_summary_is_current()

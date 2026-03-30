@@ -36,6 +36,22 @@ class DanteActionAdapter:
         return payload
 
     def run_chapter_preflight(self, chapter_id: str) -> dict[str, Any]:
+        state_store = getattr(self.orchestrator, "state_store", None)
+        if state_store is not None:
+            state = state_store.load_or_create()
+            if getattr(state, "pending_confirmation", "") == "outline_scope":
+                return {
+                    "action": "run_chapter_preflight",
+                    "ok": False,
+                    "blocked": True,
+                    "stage": state.stage.value,
+                    "next_action": "request_outline_confirmation",
+                    "message": "还不能进入章节预检。请先确认大纲范围。",
+                    "chapter_id": chapter_id,
+                    "reason": "outline_not_confirmed",
+                    "missing_items": ["outline_scope"],
+                    "packet": None,
+                }
         result = self.orchestrator.run_chapter_preflight(chapter_id)
         payload = self._wrap("run_chapter_preflight", result)
         payload.update(result if isinstance(result, dict) else {})
