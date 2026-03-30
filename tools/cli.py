@@ -1039,6 +1039,28 @@ def build_cli_tool_executors(project_root: Path) -> dict[str, Callable[[dict], d
     }
 
 
+def build_dante_tool_layers(project_root: Path) -> dict[str, object]:
+    """构建 Dante 可直接消费的工具分层视图。"""
+    from tools.agent.toolkits import DANTE_ACTION_TOOLKIT, DANTE_DIRECT_TOOLKIT
+
+    tool_executors = build_cli_tool_executors(project_root)
+    return {
+        "tool_executors": tool_executors,
+        "direct_toolkit": DANTE_DIRECT_TOOLKIT,
+        "action_toolkit": DANTE_ACTION_TOOLKIT,
+        "direct_tool_executors": {
+            name: tool_executors[name]
+            for name in DANTE_DIRECT_TOOLKIT
+            if name in tool_executors
+        },
+        "action_tool_executors": {
+            name: tool_executors[name]
+            for name in DANTE_ACTION_TOOLKIT
+            if name in tool_executors
+        },
+    }
+
+
 def _coerce_target_words(value) -> int:
     try:
         words = int(value)
