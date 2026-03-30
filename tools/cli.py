@@ -1091,6 +1091,16 @@ def _build_dante_action_executors(
                 return text
         return default
 
+    def _missing_required_arg(action: str, field_name: str) -> dict[str, object]:
+        return {
+            "action": action,
+            "ok": False,
+            "blocked": True,
+            "error": f"missing_{field_name}",
+            "message": f"缺少必需参数: {field_name}",
+            field_name: "",
+        }
+
     return {
         "summarize_ideation": lambda args: adapter.summarize_ideation(),
         "confirm_ideation_summary": lambda args: adapter.confirm_ideation_summary(
@@ -1099,8 +1109,10 @@ def _build_dante_action_executors(
         "generate_outline_draft": lambda args: adapter.generate_outline_draft(
             _read_text_arg(args, "request_text", "text", default="帮我生成一份四级大纲")
         ),
-        "run_chapter_preflight": lambda args: adapter.run_chapter_preflight(
-            _read_text_arg(args, "chapter_id", "chapter", default="ch_001")
+        "run_chapter_preflight": lambda args: (
+            adapter.run_chapter_preflight(_read_text_arg(args, "chapter_id", "chapter"))
+            if _read_text_arg(args, "chapter_id", "chapter")
+            else _missing_required_arg("run_chapter_preflight", "chapter_id")
         ),
     }
 

@@ -110,3 +110,24 @@ def test_build_dante_tool_layers_exposes_callable_action_executors(
     assert layers["action_tool_executors"]["confirm_ideation_summary"]({})["action"] == "confirm_ideation_summary"
     assert layers["action_tool_executors"]["generate_outline_draft"]({})["action"] == "generate_outline_draft"
     assert layers["action_tool_executors"]["run_chapter_preflight"]({"chapter_id": "ch_001"})["action"] == "run_chapter_preflight"
+
+
+def test_dante_preflight_action_requires_explicit_chapter_id(
+    monkeypatch, tmp_path: Path
+):
+    def fake_factory(project_root: Path):
+        assert project_root == tmp_path
+        return {
+            "get_status": lambda a: {"ok": True},
+        }
+
+    monkeypatch.setattr(cli_module, "build_cli_tool_executors", fake_factory)
+
+    layers = cli_module.build_dante_tool_layers(tmp_path)
+    result = layers["action_tool_executors"]["run_chapter_preflight"]({})
+
+    assert result["action"] == "run_chapter_preflight"
+    assert result["ok"] is False
+    assert result["blocked"] is True
+    assert result["error"] == "missing_chapter_id"
+    assert result["chapter_id"] == ""
