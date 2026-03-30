@@ -1041,9 +1041,17 @@ def build_cli_tool_executors(project_root: Path) -> dict[str, Callable[[dict], d
 
 def build_dante_tool_layers(project_root: Path) -> dict[str, object]:
     """构建 Dante 可直接消费的工具分层视图。"""
+    from tools.agent.dante_actions import DanteActionAdapter
+    from tools.agent.orchestrator import OpenWriteOrchestrator
     from tools.agent.toolkits import DANTE_ACTION_TOOLKIT, DANTE_DIRECT_TOOLKIT
 
     tool_executors = build_cli_tool_executors(project_root)
+    action_tool_executors = _build_dante_action_executors(
+        project_root,
+        tool_executors=tool_executors,
+        orchestrator_cls=OpenWriteOrchestrator,
+        adapter_cls=DanteActionAdapter,
+    )
     return {
         "tool_executors": tool_executors,
         "direct_toolkit": DANTE_DIRECT_TOOLKIT,
@@ -1053,11 +1061,47 @@ def build_dante_tool_layers(project_root: Path) -> dict[str, object]:
             for name in DANTE_DIRECT_TOOLKIT
             if name in tool_executors
         },
-        "action_tool_executors": {
-            name: tool_executors[name]
-            for name in DANTE_ACTION_TOOLKIT
-            if name in tool_executors
-        },
+        "action_tool_executors": action_tool_executors,
+    }
+
+
+def _build_dante_action_executors(
+    project_root: Path,
+    *,
+    tool_executors: dict[str, Callable[[dict], dict]],
+    orchestrator_cls,
+    adapter_cls,
+) -> dict[str, Callable[[dict], dict]]:
+    config = _load_config(project_root)
+    novel_id = (config or {}).get("novel_id") or "current"
+    orchestrator = orchestrator_cls(
+        project_root=project_root,
+        novel_id=novel_id,
+        tool_executors=tool_executors,
+    )
+    adapter = adapter_cls(orchestrator)
+
+    def _read_text_arg(args: dict, *keys: str, default: str = "") -> str:
+        for key in keys:
+            value = args.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return default
+
+    return {
+        "summarize_ideation": lambda args: adapter.summarize_ideation(),
+        "confirm_ideation_summary": lambda args: adapter.confirm_ideation_summary(
+            _read_text_arg(args, "text", "confirmation", default="这个汇总可以")
+        ),
+        "generate_outline_draft": lambda args: adapter.generate_outline_draft(
+            _read_text_arg(args, "request_text", "text", default="帮我生成一份四级大纲")
+        ),
+        "run_chapter_preflight": lambda args: adapter.run_chapter_preflight(
+            _read_text_arg(args, "chapter_id", "chapter", default="ch_001")
+        ),
     }
 
 

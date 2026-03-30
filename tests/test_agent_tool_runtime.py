@@ -69,24 +69,16 @@ def test_dante_direct_toolkit_exposes_only_light_tools():
 
 def test_dante_action_toolkit_exposes_high_level_actions():
     assert DANTE_ACTION_TOOLKIT == {
-        "record_ideation",
         "summarize_ideation",
         "confirm_ideation_summary",
-        "generate_foundation_draft",
-        "confirm_foundation",
         "generate_outline_draft",
-        "confirm_outline_scope",
         "run_chapter_preflight",
-        "delegate_chapter_write",
-        "delegate_chapter_review",
-        "advance_book_state",
-        "resume_session",
     }
     assert "get_status" not in DANTE_ACTION_TOOLKIT
     assert "write_chapter" not in DANTE_ACTION_TOOLKIT
 
 
-def test_build_dante_tool_layers_groups_direct_tools_without_reassembling_raw_executors(
+def test_build_dante_tool_layers_exposes_callable_action_executors(
     monkeypatch, tmp_path: Path
 ):
     executors = {
@@ -111,3 +103,10 @@ def test_build_dante_tool_layers_groups_direct_tools_without_reassembling_raw_ex
     }
     assert "write_chapter" not in layers["direct_tool_executors"]
     assert layers["tool_executors"] is executors
+    assert layers["action_tool_executors"]
+    assert set(layers["action_tool_executors"].keys()) == DANTE_ACTION_TOOLKIT
+    assert all(callable(fn) for fn in layers["action_tool_executors"].values())
+    assert layers["action_tool_executors"]["summarize_ideation"]({})["action"] == "summarize_ideation"
+    assert layers["action_tool_executors"]["confirm_ideation_summary"]({})["action"] == "confirm_ideation_summary"
+    assert layers["action_tool_executors"]["generate_outline_draft"]({})["action"] == "generate_outline_draft"
+    assert layers["action_tool_executors"]["run_chapter_preflight"]({"chapter_id": "ch_001"})["action"] == "run_chapter_preflight"

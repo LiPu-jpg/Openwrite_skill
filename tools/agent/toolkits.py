@@ -33,16 +33,8 @@ DANTE_DIRECT_TOOLKIT = {
 }
 
 DANTE_ACTION_TOOLKIT = {
-    "record_ideation",
     "summarize_ideation",
     "confirm_ideation_summary",
-    "generate_foundation_draft",
-    "confirm_foundation",
     "generate_outline_draft",
-    "confirm_outline_scope",
     "run_chapter_preflight",
-    "delegate_chapter_write",
-    "delegate_chapter_review",
-    "advance_book_state",
-    "resume_session",
 }
