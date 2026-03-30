@@ -25,14 +25,17 @@ class FakePromptSession:
 
 
 class FakeReActAgent:
-    def __init__(self, responses: list[str] | None = None):
+    def __init__(self, responses: list[str] | None = None, error: Exception | None = None):
         self.instructions: list[str] = []
         self.calls: list[dict[str, object]] = []
         self.responses = responses or ["收到"]
+        self.error = error
 
     def run(self, instruction: str, **kwargs):
         self.instructions.append(instruction)
         self.calls.append({"instruction": instruction, "kwargs": kwargs})
+        if self.error is not None:
+            raise self.error
         if not self.responses:
             return "收到"
         return self.responses.pop(0)
@@ -267,5 +270,112 @@ def test_dante_default_react_agent_has_direct_and_action_tool_surface(
     tool_names = {tool.name for tool in react_agent.tools}
     assert "get_status" in tool_names
     assert "summarize_ideation" in tool_names
+    assert hasattr(react_agent, "_tool_get_status")
+    assert hasattr(react_agent, "_tool_summarize_ideation")
+
+
+def test_dante_persists_user_turn_when_react_raises(tmp_path: Path):
+    from tools.agent.dante import DanteChatAgent
+
+    _write_session_state(tmp_path, "demo")
+    _write_book_state(tmp_path, "demo")
+
+    prompt_session = FakePromptSession(["我想继续推进"])
+    react_agent = FakeReActAgent(error=RuntimeError("boom"))
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        prompt_session_factory=lambda **kwargs: prompt_session,
+        react_agent=react_agent,
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        agent.run()
+
+    persisted = yaml.safe_load(agent.session_store.path.read_text(encoding="utf-8"))
+    assert persisted["recent_turns"][-1] == {
+        "role": "user",
+        "content": "我想继续推进",
+    }
+
+
+def test_dante_context_messages_do_not_repeat_current_instruction(tmp_path: Path):
+    from tools.agent.dante import DanteChatAgent
+
+    _write_session_state(tmp_path, "demo")
+    _write_book_state(tmp_path, "demo")
+
+    prompt_session = FakePromptSession(["查看当前状态", "exit"])
+    react_agent = FakeReActAgent(responses=["收到"])
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        prompt_session_factory=lambda **kwargs: prompt_session,
+        react_agent=react_agent,
+    )
+
+    result = agent.run()
+
+    assert result.success is True
+    assert react_agent.instructions == ["查看当前状态"]
+    context_text = "\n".join(
+        message.content for message in react_agent.calls[0]["kwargs"]["context_messages"]
+    )
+    assert "查看当前状态" not in context_text
+    assert "会话摘要" in context_text
+    assert "最近轮次" in context_text
+    assert "rolling_outline" in context_text
+
+
+def test_dante_injected_real_react_agent_gets_tool_definitions_and_surface(
+    tmp_path: Path,
+):
+    from tools.agent.dante import DanteChatAgent
+    from tools.agent.react import ReActAgent
+
+    _write_session_state(tmp_path, "demo")
+    _write_book_state(tmp_path, "demo")
+
+    class RecordingClient:
+        def __init__(self):
+            self.calls: list[dict[str, object]] = []
+
+        def chat_with_tools(self, messages, tools, **kwargs):
+            self.calls.append({"messages": list(messages), "tools": list(tools)})
+            return type("Resp", (), {"content": "退出", "tool_calls": []})()
+
+    react_agent = ReActAgent(
+        client=RecordingClient(),
+        model="demo",
+        tools=[],
+        system_prompt="系统提示",
+    )
+
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        prompt_session_factory=lambda **kwargs: FakePromptSession(["exit"]),
+        react_agent=react_agent,
+        tool_executors={
+            "get_status": lambda args: {"ok": True},
+            "get_context": lambda args: {"ok": True},
+            "list_chapters": lambda args: {"ok": True},
+            "get_truth_files": lambda args: {"ok": True},
+            "query_world": lambda args: {"ok": True},
+            "get_world_relations": lambda args: {"ok": True},
+        },
+        action_executors={
+            "summarize_ideation": lambda args: {"ok": True, "action": "summarize_ideation"},
+            "confirm_ideation_summary": lambda args: {"ok": True, "action": "confirm_ideation_summary"},
+            "generate_outline_draft": lambda args: {"ok": True, "action": "generate_outline_draft"},
+            "run_chapter_preflight": lambda args: {"ok": True, "action": "run_chapter_preflight"},
+        },
+    )
+
+    assert {tool.name for tool in react_agent.tools} >= {
+        "get_status",
+        "summarize_ideation",
+        "run_chapter_preflight",
+    }
     assert hasattr(react_agent, "_tool_get_status")
     assert hasattr(react_agent, "_tool_summarize_ideation")

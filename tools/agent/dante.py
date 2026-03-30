@@ -119,10 +119,8 @@ class DanteChatAgent:
             self._build_default_react_agent if react_agent is None else None
         )
 
-        if self._react_agent is not None and self._combined_tool_executors() and hasattr(
-            self._react_agent, "_register_tool_executors"
-        ):
-            self._react_agent._register_tool_executors(self._combined_tool_executors())
+        if self._react_agent is not None:
+            self._ensure_react_agent_surface(self._react_agent)
 
         self.session_state: DanteSessionState | None = None
         self.book_state: BookState | None = None
@@ -222,7 +220,13 @@ class DanteChatAgent:
             self._append_user_turn(user_input)
             state = self._require_session_state()
             state.last_action = "chat"
-            response_text = self._run_react_agent(react_agent, user_input)
+            self.session_store.save(state)
+            try:
+                response_text = self._run_react_agent(react_agent, user_input)
+            except Exception:
+                state.last_action = "react_error"
+                self.session_store.save(state)
+                raise
             if response_text:
                 self._append_assistant_turn(response_text)
                 print(f"\n🤖 Dante: {response_text}")
@@ -248,16 +252,31 @@ class DanteChatAgent:
     def _get_react_agent(self) -> Any:
         if self._react_agent is None:
             self._react_agent = self._react_agent_factory()
-            if self._combined_tool_executors() and hasattr(
-                self._react_agent, "_register_tool_executors"
-            ):
-                self._react_agent._register_tool_executors(self._combined_tool_executors())
+        self._ensure_react_agent_surface(self._react_agent)
         return self._react_agent
+
+    def _ensure_react_agent_surface(self, react_agent: Any) -> None:
+        if react_agent is None:
+            return
+        combined_tools = _build_dante_tool_definitions()
+        if hasattr(react_agent, "tools"):
+            existing_tools = list(getattr(react_agent, "tools", []) or [])
+            existing_names = {
+                getattr(tool, "name", "")
+                for tool in existing_tools
+                if getattr(tool, "name", "")
+            }
+            merged_tools = existing_tools + [
+                tool for tool in combined_tools if tool.name not in existing_names
+            ]
+            react_agent.tools = merged_tools
+        if self._combined_tool_executors() and hasattr(react_agent, "_register_tool_executors"):
+            react_agent._register_tool_executors(self._combined_tool_executors())
 
     def _run_react_agent(self, react_agent: Any, instruction: str) -> str:
         result = react_agent.run(
             instruction,
-            context_messages=self._build_context_messages(),
+            context_messages=self._build_context_messages(include_recent_turns=False),
         )
         if inspect.isawaitable(result):
             result = asyncio.run(result)
@@ -273,7 +292,7 @@ class DanteChatAgent:
             return str(content).strip()
         return str(result).strip()
 
-    def _build_context_messages(self) -> list[Message]:
+    def _build_context_messages(self, *, include_recent_turns: bool = True) -> list[Message]:
         session_state = self._require_session_state()
         book_state = self._require_book_state()
         context_messages: list[Message] = []
@@ -292,9 +311,13 @@ class DanteChatAgent:
             )
             context_messages.append(Message("assistant", f"工作记忆: {memory_bits}"))
 
-        if session_state.recent_turns:
+        recent_turns = session_state.recent_turns
+        if not include_recent_turns and recent_turns:
+            recent_turns = recent_turns[:-1]
+
+        if recent_turns:
             recent_lines = [
-                f"{turn.role}: {turn.content}" for turn in session_state.recent_turns
+                f"{turn.role}: {turn.content}" for turn in recent_turns
             ]
             context_messages.append(
                 Message("assistant", "最近轮次:\n" + "\n".join(recent_lines))
