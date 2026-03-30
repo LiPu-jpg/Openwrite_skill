@@ -149,6 +149,21 @@ class OpenWriteOrchestrator:
             "packet": packet,
         }
 
+    def summarize_ideation(self) -> OrchestratorResult:
+        self.state = self.state_store.load_or_create()
+        return self._ensure_ideation_summary_confirmation(blocked=False)
+
+    def confirm_ideation_summary(self, text: str = "这个汇总可以") -> OrchestratorResult:
+        self.state = self.state_store.load_or_create()
+        return self._handle_ideation_summary_confirmation(text)
+
+    def generate_outline_draft(self, request_text: str) -> OrchestratorResult:
+        self.state = self.state_store.load_or_create()
+        return self._handle_outline_generation(request_text)
+
+    def run_chapter_preflight(self, chapter_id: str) -> dict[str, Any]:
+        return self.run_preflight(chapter_id)
+
     def delegate_writing(
         self,
         chapter_id: str,

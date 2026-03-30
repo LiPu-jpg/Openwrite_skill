@@ -147,6 +147,22 @@ class StoryPlanningStore:
         self.outline_src_path.write_text(content, encoding="utf-8")
         self.outline_draft_path.write_text(content, encoding="utf-8")
 
+    def read_outline_draft(self, max_chars: int = 0) -> str:
+        if not self.outline_draft_path.exists():
+            return ""
+        text = self.outline_draft_path.read_text(encoding="utf-8").strip()
+        if max_chars and len(text) > max_chars:
+            return text[:max_chars]
+        return text
+
+    def outline_draft_is_current(self) -> bool:
+        if not self.outline_src_path.exists() or not self.outline_draft_path.exists():
+            return False
+        return (
+            self.outline_src_path.read_text(encoding="utf-8")
+            == self.outline_draft_path.read_text(encoding="utf-8")
+        )
+
     def promote_outline(self, confirmed: bool) -> bool:
         if not confirmed:
             return False
