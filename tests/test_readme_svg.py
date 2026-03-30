@@ -22,6 +22,9 @@ def test_readme_documents_dante_as_primary_entry():
 
     assert "`openwrite dante`" in text
     assert "`openwrite goethe`" in text
+    assert "`openwrite write" in text
+    assert "`openwrite review" in text
+    assert "`openwrite multi-write" in text
     assert "openwrite agent 已退役" in text or "已退役" in text
     assert "`openwrite agent` 是主编排入口" not in text
     assert 'openwrite agent "' not in text
@@ -32,6 +35,7 @@ def test_skill_docs_no_longer_present_agent_as_primary_entry():
     goethe_skill = Path("skills/goethe-agent/SKILL.md").read_text(encoding="utf-8")
 
     assert "`openwrite dante` 是主编排入口" in root_skill
+    assert "`write` / `multi-write` / `review`" in root_skill
     assert "`openwrite agent` 是主编排入口" not in root_skill
     assert "openwrite dante" in goethe_skill
     assert "openwrite agent \"写第一章\"" not in goethe_skill

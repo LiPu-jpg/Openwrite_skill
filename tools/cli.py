@@ -134,15 +134,12 @@ def _add_goethe_command(subparsers):
 
 
 def _add_dante_command(subparsers):
-    """dante 命令 - 过渡性主入口"""
+    """dante 命令 - 长期会话主入口"""
     p = subparsers.add_parser(
         "dante",
-        help="过渡性主入口：复用确定性编排器",
-        description="过渡性主入口：复用现有确定性编排器，作为主入口迁移层。",
+        help="长期会话主入口：启动 Dante 持续对话 shell",
+        description="长期会话主入口：启动 Dante 持续对话 shell。",
     )
-    p.add_argument("instruction", nargs="?", default="查看项目状态", help="自然语言指令")
-    p.add_argument("--max-turns", type=int, default=20, help="最大循环次数")
-    p.add_argument("--quiet", action="store_true", help="静默模式")
 
 
 def _add_sync_command(subparsers):
@@ -836,34 +833,17 @@ def _cmd_goethe(args) -> int:
 
 
 def _cmd_dante(args) -> int:
-    """Dante 入口 - 过渡性封装"""
-    project_root = Path.cwd()
-    config = _load_config(project_root)
-    if not config:
-        logger.error("openwrite dante 未找到 novel_config.yaml，请先运行 openwrite init")
-        return 1
-
-    novel_id = config.get("novel_id") or "current"
-
+    """Dante 长会话主入口。"""
+    _ = args
     try:
-        from tools.agent.orchestrator import OpenWriteOrchestrator
-        from tools.agent.tool_runtime import build_tool_executors
+        from tools.agent.dante import run_dante
 
-        orchestrator = OpenWriteOrchestrator(
-            project_root=project_root,
-            novel_id=novel_id,
-            tool_executors=build_tool_executors(project_root),
-        )
-        return orchestrator.run_cli(
-            instruction=args.instruction,
-            quiet=args.quiet,
-            max_turns=args.max_turns,
-        )
+        return run_dante()
     except ImportError as e:
         logger.error(f"Dante 模块未安装: {e}")
         return 1
     except Exception as e:
-        logger.error(f"Dante 执行失败: {e}")
+        logger.error(f"Dante 启动失败: {e}")
         return 1
 
 
