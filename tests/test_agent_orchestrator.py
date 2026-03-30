@@ -205,6 +205,37 @@ def test_dante_actions_confirm_summary_only_when_gate_is_pending(
     assert state.pending_confirmation == ""
 
 
+def test_dante_actions_confirm_summary_advances_discovery_to_foundation(
+    tmp_path: Path,
+):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.append_ideation("主角是普通上班族")
+    planning_store.save_ideation_summary("# 当前想法汇总\n\n- 都市职场异能")
+    state = state_store.load_or_create()
+    state.stage = BookStage.DISCOVERY
+    state.pending_confirmation = "ideation_summary"
+    state.last_agent_action = "generated_ideation_summary"
+    state_store.save(state)
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    adapter = DanteActionAdapter(orchestrator)
+
+    payload = adapter.confirm_ideation_summary("这个汇总可以")
+
+    state = state_store.load_or_create()
+    assert payload["blocked"] is False
+    assert payload["next_action"] == "ready_for_outline_generation"
+    assert payload["stage"] == BookStage.FOUNDATION.value
+    assert state.stage == BookStage.FOUNDATION
+    assert state.pending_confirmation == ""
+    assert state.last_agent_action == "confirmed_ideation_summary"
+
+
 def test_dante_actions_require_outline_scope_confirmation_before_preflight(
     tmp_path: Path,
 ):
