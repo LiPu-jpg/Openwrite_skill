@@ -86,7 +86,11 @@ def test_load_or_create_compresses_existing_overlong_session_and_keeps_recent_wi
     state = store.load_or_create()
 
     assert len(state.recent_turns) == MAX_RECENT_TURNS
+    assert [turn.content for turn in state.recent_turns] == [
+        f"turn-{index:02d}" for index in range(3, MAX_RECENT_TURNS + 3)
+    ]
     assert state.conversation_summary != "seed summary"
+    assert "seed summary" in state.conversation_summary
     assert "turn-00" in state.conversation_summary
     assert state.compression_markers[-1].reason == "count"
     assert state.compression_markers[-1].kept_turns == MAX_RECENT_TURNS

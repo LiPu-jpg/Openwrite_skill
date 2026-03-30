@@ -255,9 +255,11 @@ def test_dante_run_compresses_session_after_large_response(tmp_path: Path):
 
     result = agent.run()
     persisted = yaml.safe_load(agent.session_store.path.read_text(encoding="utf-8"))
+    persisted_size = len(agent.session_store.path.read_text(encoding="utf-8").encode("utf-8"))
 
     assert result.success is True
     assert persisted["compression_markers"][-1]["reason"] == "size"
+    assert persisted_size <= MAX_SESSION_BYTES
     assert len(persisted["recent_turns"]) >= 1
     assert persisted["conversation_summary"]
 
