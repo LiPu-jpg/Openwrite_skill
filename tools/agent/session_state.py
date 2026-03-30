@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
+import hashlib
 import tempfile
 from typing import Any, Literal
 
@@ -91,10 +92,14 @@ class SessionStateStore:
         self._stamp_updated_at(state)
         self._compress_if_needed(state)
         self._normalize_state_for_persistence(state)
+        content = self._serialize_state(state)
+        if len(content.encode("utf-8")) > MAX_SESSION_BYTES:
+            self._tighten_serialized_state(state)
+            self._normalize_state_for_persistence(state)
+            content = self._serialize_state(state)
+        if len(content.encode("utf-8")) > MAX_SESSION_BYTES:
+            raise ValueError("session state exceeded MAX_SESSION_BYTES after serialization")
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        content = yaml.safe_dump(
-            self._to_dict(state), allow_unicode=True, sort_keys=False
-        )
         with tempfile.NamedTemporaryFile(
             mode="w",
             encoding="utf-8",
@@ -198,11 +203,10 @@ class SessionStateStore:
         return f"{existing}\n{addition}"
 
     def _estimate_size(self, state: DanteSessionState) -> int:
-        return len(
-            yaml.safe_dump(
-                self._to_dict(state), allow_unicode=True, sort_keys=False
-            ).encode("utf-8")
-        )
+        return len(self._serialize_state(state).encode("utf-8"))
+
+    def _serialize_state(self, state: DanteSessionState) -> str:
+        return yaml.safe_dump(self._to_dict(state), allow_unicode=True, sort_keys=False)
 
     def _render_turn(self, turn: SessionTurn, content_limit: int | None = None) -> str:
         role = self._stringify_scalar(turn.role) or "unknown"
@@ -305,6 +309,13 @@ class SessionStateStore:
         data["updated_at"] = self._normalize_scalar(data["updated_at"], "")
         return data
 
+    def _tighten_serialized_state(self, state: DanteSessionState) -> None:
+        while len(state.compression_markers) > 1:
+            state.compression_markers.pop(0)
+            if self._estimate_size(state) <= MAX_SESSION_BYTES:
+                return
+        self._hard_truncate_state(state)
+
     def _from_dict(self, data: dict[str, Any]) -> DanteSessionState:
         return DanteSessionState(
             session_id=self._normalize_scalar(data.get("session_id"), self.novel_id),
@@ -343,14 +354,17 @@ class SessionStateStore:
     def _normalize_mapping(self, value: Any) -> dict[str, Any]:
         if not isinstance(value, dict):
             return {"value": self._sanitize_yaml_value(value)}
-        return {
-            self._truncate_text(
-                self._stringify_scalar(key),
-                MAX_STRUCTURAL_TEXT_BYTES,
-                keep_tail=False,
-            ): self._sanitize_yaml_value(item)
-            for key, item in value.items()
-        }
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized[self._normalize_mapping_key(key, normalized)] = self._normalize_mapping_value(item)
+        return normalized
+
+    def _normalize_mapping_value(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return self._normalize_mapping(value)
+        if isinstance(value, list):
+            return [self._normalize_mapping_value(item) for item in value]
+        return self._sanitize_yaml_value(value)
 
     def _coerce_marker_list(self, value: Any) -> list[CompressionMarker]:
         if value is None:
@@ -454,15 +468,11 @@ class SessionStateStore:
     def _compact_mapping(
         self, value: dict[str, Any], budget: int, max_keys: int
     ) -> dict[str, Any]:
+        if not isinstance(value, dict):
+            value = self._normalize_mapping(value)
         compacted: dict[str, Any] = {}
         for key, item in list(value.items())[-max_keys:]:
-            compacted[
-                self._truncate_text(
-                    self._stringify_scalar(key),
-                    MAX_STRUCTURAL_TEXT_BYTES,
-                    keep_tail=False,
-                )
-            ] = self._compact_value(item, budget)
+            compacted[self._normalize_mapping_key(key, compacted)] = self._compact_value(item, budget)
         return compacted
 
     def _compact_string_list(self, value: list[str], budget: int) -> list[str]:
@@ -474,14 +484,7 @@ class SessionStateStore:
         if isinstance(value, list):
             return [self._compact_value(item, budget) for item in value[:8]]
         if isinstance(value, dict):
-            return {
-                self._truncate_text(
-                    self._stringify_scalar(key),
-                    MAX_STRUCTURAL_TEXT_BYTES,
-                    keep_tail=False,
-                ): self._compact_value(item, budget)
-                for key, item in list(value.items())[:8]
-            }
+            return self._compact_mapping(value, budget, 8)
         return value
 
     def _sanitize_yaml_value(self, value: Any) -> Any:
@@ -502,6 +505,23 @@ class SessionStateStore:
         if isinstance(value, str):
             return value
         return str(value)
+
+    def _normalize_mapping_key(self, key: Any, taken: dict[str, Any]) -> str:
+        raw = self._stringify_scalar(key) or "key"
+        candidate = self._truncate_text(raw, MAX_STRUCTURAL_TEXT_BYTES, keep_tail=False)
+        if candidate not in taken:
+            return candidate
+
+        attempt = 0
+        while True:
+            digest = hashlib.sha1(f"{raw}:{attempt}".encode("utf-8")).hexdigest()[:10]
+            suffix = f"~{digest}"
+            limit = MAX_STRUCTURAL_TEXT_BYTES - len(suffix.encode("utf-8"))
+            prefix = self._truncate_text(raw, max(limit, 0), keep_tail=False)
+            candidate = f"{prefix}{suffix}" if prefix else suffix[-MAX_STRUCTURAL_TEXT_BYTES:]
+            if candidate not in taken:
+                return candidate
+            attempt += 1
 
     def _normalize_scalar(self, value: Any, default: str) -> str:
         if value is None:

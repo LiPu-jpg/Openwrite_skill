@@ -450,6 +450,50 @@ def test_save_compresses_oversized_nested_working_memory_key_name(tmp_path: Path
     assert persisted_size <= MAX_SESSION_BYTES
 
 
+def test_save_preserves_distinct_long_working_memory_keys(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    prefix = "shared-prefix-" + ("k" * 80)
+    state.working_memory = {
+        f"{prefix}-one": "alpha",
+        f"{prefix}-two": "beta",
+    }
+
+    store.save(state)
+    reloaded = store.load_or_create()
+
+    assert len(reloaded.working_memory) == 2
+    assert set(reloaded.working_memory.values()) == {"alpha", "beta"}
+
+
+def test_save_preserves_distinct_long_keys_near_marker_boundary(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    prefix = "shared-prefix-" + ("k" * 80)
+    state.conversation_summary = "x" * (MAX_SESSION_BYTES // 2)
+    state.recent_turns = [SessionTurn(role="user", content="tail")]
+    state.working_memory = {
+        f"{prefix}-one": "alpha",
+        f"{prefix}-two": "beta",
+    }
+    state.compression_markers = [
+        CompressionMarker(
+            compressed_at="2026-03-30T10:00:00",
+            dropped_turns=1,
+            kept_turns=1,
+            reason="count",
+        )
+    ]
+
+    store.save(state)
+    persisted_size = len(store.path.read_text(encoding="utf-8").encode("utf-8"))
+    reloaded = store.load_or_create()
+
+    assert persisted_size <= MAX_SESSION_BYTES
+    assert len(reloaded.working_memory) == 2
+    assert set(reloaded.working_memory.values()) == {"alpha", "beta"}
+
+
 def test_save_normalizes_non_dict_working_memory(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     state = DanteSessionState(session_id="demo")
