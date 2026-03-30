@@ -231,14 +231,11 @@ def _add_doctor_command(subparsers):
 
 def _add_agent_command(subparsers):
     """agent 命令 - 已退役"""
-    p = subparsers.add_parser(
+    subparsers.add_parser(
         "agent",
         help="已退役：请改用 openwrite dante",
         description="已退役：请改用 openwrite dante",
     )
-    p.add_argument("instruction", nargs="?", default="查看项目状态", help="自然语言指令")
-    p.add_argument("--max-turns", type=int, default=20, help="最大循环次数")
-    p.add_argument("--quiet", action="store_true", help="静默模式")
 
 
 def _cmd_init(args) -> int:

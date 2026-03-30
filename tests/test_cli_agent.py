@@ -163,6 +163,21 @@ def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
     assert "openwrite dante" in caplog.text
 
 
+def test_agent_help_only_reports_retired_status(monkeypatch: pytest.MonkeyPatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "agent", "--help"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+
+    captured = capsys.readouterr()
+
+    assert exc.value.code == 0
+    assert "已退役" in captured.out
+    assert "instruction" not in captured.out
+    assert "--max-turns" not in captured.out
+    assert "--quiet" not in captured.out
+
+
 def test_run_cli_status_instruction_is_read_only(tmp_path: Path):
     state_store = BookStateStore(tmp_path, "demo")
     assert state_store.path.exists() is False
