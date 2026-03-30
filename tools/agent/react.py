@@ -10,7 +10,7 @@
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +85,8 @@ class ReActAgent:
         on_tool_call: Optional[Callable[[str, dict], None]] = None,
         on_tool_result: Optional[Callable[[str, str], None]] = None,
         on_message: Optional[Callable[[str], None]] = None,
+        context_messages: Optional[Sequence[Any]] = None,
+        context_message_factory: Optional[Callable[[], Sequence[Any]]] = None,
     ) -> str:
         """运行 Agent
 
@@ -99,10 +101,10 @@ class ReActAgent:
         """
         from ..llm import Message
 
-        messages = [
-            Message("system", self.system_prompt),
-            Message("user", instruction),
-        ]
+        messages = [Message("system", self.system_prompt)]
+        messages.extend(self._coerce_messages(context_message_factory() if context_message_factory else None))
+        messages.extend(self._coerce_messages(context_messages))
+        messages.append(Message("user", instruction))
 
         last_content = ""
 
@@ -159,6 +161,28 @@ class ReActAgent:
             logger.warning(f"Reached max turns ({self.max_turns})")
 
         return last_content
+
+    def _coerce_messages(self, messages: Optional[Sequence[Any]]) -> list[Any]:
+        from ..llm import Message
+
+        if not messages:
+            return []
+
+        normalized: list[Any] = []
+        for message in messages:
+            if isinstance(message, Message):
+                normalized.append(message)
+            elif isinstance(message, dict):
+                normalized.append(
+                    Message(
+                        role=message.get("role", "assistant"),
+                        content=str(message.get("content", "")),
+                        tool_call_id=str(message.get("tool_call_id", "")),
+                    )
+                )
+            else:
+                normalized.append(Message("assistant", str(message)))
+        return normalized
 
     def _chat_with_tools(self, messages: list) -> Any:
         """调用 LLM（带工具）"""

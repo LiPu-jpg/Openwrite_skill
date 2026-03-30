@@ -9,16 +9,65 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .book_state import BookStage, BookState, BookStateStore
-from .react import ReActAgent
+from .react import OPENWRITE_TOOLS, ReActAgent, ToolDefinition
+from .toolkits import DANTE_DIRECT_TOOLKIT
 from .session_state import DanteSessionState, SessionStateStore, SessionTurn
 from ..goethe import build_prompt_session, is_exit_command
-from ..llm import LLMClient, LLMConfig
+from ..llm import LLMClient, LLMConfig, Message
+from ..cli import build_dante_tool_layers
 
 DEFAULT_DANTE_SYSTEM_PROMPT = (
     "你是 OpenWrite 的 Dante，长期会话主 Agent。"
     "你负责持续记住上下文、帮助用户汇总想法、确认设定、推进写作。"
     "优先保持对话连续性，不要把自己当成一次性 wizard。"
 )
+
+_DANTE_ACTION_TOOL_DEFINITIONS = [
+    ToolDefinition(
+        name="summarize_ideation",
+        description="汇总当前收集到的想法，生成会话共识摘要。",
+        parameters={"type": "object", "properties": {}},
+    ),
+    ToolDefinition(
+        name="confirm_ideation_summary",
+        description="确认或修正当前的想法摘要。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "确认文本"},
+            },
+        },
+    ),
+    ToolDefinition(
+        name="generate_outline_draft",
+        description="基于共识摘要生成大纲草案。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "request_text": {"type": "string", "description": "大纲生成请求"},
+            },
+            "required": ["request_text"],
+        },
+    ),
+    ToolDefinition(
+        name="run_chapter_preflight",
+        description="为指定章节执行写作前预检。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节 ID"},
+            },
+            "required": ["chapter_id"],
+        },
+    ),
+]
+
+
+def _build_dante_tool_definitions() -> list[ToolDefinition]:
+    direct_tool_defs = [
+        tool for tool in OPENWRITE_TOOLS if tool.name in DANTE_DIRECT_TOOLKIT
+    ]
+    return direct_tool_defs + _DANTE_ACTION_TOOL_DEFINITIONS
 
 
 @dataclass
@@ -48,6 +97,7 @@ class DanteChatAgent:
         prompt_session_factory: Callable[[], Any] | None = None,
         llm_client_factory: Callable[[], LLMClient] | None = None,
         tool_executors: dict[str, Callable[[dict[str, Any]], Any]] | None = None,
+        action_executors: dict[str, Callable[[dict[str, Any]], Any]] | None = None,
         prompt_text: str = "\n🕯️ Dante> ",
     ):
         self.project_root = Path(project_root).resolve()
@@ -62,16 +112,17 @@ class DanteChatAgent:
         )
         self.llm_client_factory = llm_client_factory or self._build_default_llm_client
         self.tool_executors = tool_executors or {}
+        self.action_executors = action_executors or {}
         self.prompt_text = prompt_text
         self._react_agent = react_agent
         self._react_agent_factory = (
             self._build_default_react_agent if react_agent is None else None
         )
 
-        if self._react_agent is not None and self.tool_executors and hasattr(
+        if self._react_agent is not None and self._combined_tool_executors() and hasattr(
             self._react_agent, "_register_tool_executors"
         ):
-            self._react_agent._register_tool_executors(self.tool_executors)
+            self._react_agent._register_tool_executors(self._combined_tool_executors())
 
         self.session_state: DanteSessionState | None = None
         self.book_state: BookState | None = None
@@ -183,23 +234,31 @@ class DanteChatAgent:
 
     def _build_default_react_agent(self) -> ReActAgent:
         client = self.llm_client_factory()
-        return ReActAgent(
+        react_agent = ReActAgent(
             client=client,
             model=client.config.model,
-            tools=[],
+            tools=_build_dante_tool_definitions(),
             system_prompt=DEFAULT_DANTE_SYSTEM_PROMPT,
             max_turns=20,
         )
+        if self._combined_tool_executors():
+            react_agent._register_tool_executors(self._combined_tool_executors())
+        return react_agent
 
     def _get_react_agent(self) -> Any:
         if self._react_agent is None:
             self._react_agent = self._react_agent_factory()
-            if self.tool_executors and hasattr(self._react_agent, "_register_tool_executors"):
-                self._react_agent._register_tool_executors(self.tool_executors)
+            if self._combined_tool_executors() and hasattr(
+                self._react_agent, "_register_tool_executors"
+            ):
+                self._react_agent._register_tool_executors(self._combined_tool_executors())
         return self._react_agent
 
     def _run_react_agent(self, react_agent: Any, instruction: str) -> str:
-        result = react_agent.run(instruction)
+        result = react_agent.run(
+            instruction,
+            context_messages=self._build_context_messages(),
+        )
         if inspect.isawaitable(result):
             result = asyncio.run(result)
         if result is None:
@@ -213,6 +272,64 @@ class DanteChatAgent:
             content = result.get("content", "")
             return str(content).strip()
         return str(result).strip()
+
+    def _build_context_messages(self) -> list[Message]:
+        session_state = self._require_session_state()
+        book_state = self._require_book_state()
+        context_messages: list[Message] = []
+
+        if self.recovery_prompt:
+            context_messages.append(Message("assistant", self.recovery_prompt))
+
+        if session_state.conversation_summary:
+            context_messages.append(
+                Message("assistant", f"会话摘要: {session_state.conversation_summary}")
+            )
+
+        if session_state.working_memory:
+            memory_bits = ", ".join(
+                f"{key}={value}" for key, value in session_state.working_memory.items()
+            )
+            context_messages.append(Message("assistant", f"工作记忆: {memory_bits}"))
+
+        if session_state.recent_turns:
+            recent_lines = [
+                f"{turn.role}: {turn.content}" for turn in session_state.recent_turns
+            ]
+            context_messages.append(
+                Message("assistant", "最近轮次:\n" + "\n".join(recent_lines))
+            )
+
+        if session_state.open_questions:
+            context_messages.append(
+                Message("assistant", "未决问题: " + "；".join(session_state.open_questions))
+            )
+
+        if session_state.recent_files:
+            context_messages.append(
+                Message("assistant", "最近文件: " + "；".join(session_state.recent_files))
+            )
+
+        context_messages.append(
+            Message(
+                "assistant",
+                (
+                    "书状态: "
+                    f"stage={book_state.stage.value}, "
+                    f"arc={book_state.current_arc or '未设置'}, "
+                    f"section={book_state.current_section or '未设置'}, "
+                    f"chapter={book_state.current_chapter or '未设置'}, "
+                    f"pending={book_state.pending_confirmation or '无'}"
+                ),
+            )
+        )
+        return context_messages
+
+    def _combined_tool_executors(self) -> dict[str, Callable[[dict[str, Any]], Any]]:
+        combined: dict[str, Callable[[dict[str, Any]], Any]] = {}
+        combined.update(self.tool_executors)
+        combined.update(self.action_executors)
+        return combined
 
     def _append_user_turn(self, content: str) -> None:
         state = self._require_session_state()
@@ -248,6 +365,12 @@ def run_dante() -> int:
         print("novel_config.yaml 缺少 novel_id")
         return 1
 
-    agent = DanteChatAgent(project_root=project_root, novel_id=novel_id)
+    layers = build_dante_tool_layers(project_root)
+    agent = DanteChatAgent(
+        project_root=project_root,
+        novel_id=novel_id,
+        tool_executors=layers.get("direct_tool_executors", {}),
+        action_executors=layers.get("action_tool_executors", {}),
+    )
     result = agent.run()
     return 0 if result.success else 1

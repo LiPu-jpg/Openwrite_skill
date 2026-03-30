@@ -27,10 +27,12 @@ class FakePromptSession:
 class FakeReActAgent:
     def __init__(self, responses: list[str] | None = None):
         self.instructions: list[str] = []
+        self.calls: list[dict[str, object]] = []
         self.responses = responses or ["收到"]
 
     def run(self, instruction: str, **kwargs):
         self.instructions.append(instruction)
+        self.calls.append({"instruction": instruction, "kwargs": kwargs})
         if not self.responses:
             return "收到"
         return self.responses.pop(0)
@@ -195,3 +197,75 @@ def test_dante_recovery_prompt_mentions_loaded_state(tmp_path: Path):
     assert "outline_scope" in prompt
     assert "都市职场异能" in prompt
     assert "主角是否主动入局" in prompt
+
+
+def test_dante_passes_session_memory_and_book_state_into_react(
+    tmp_path: Path,
+):
+    from tools.agent.dante import DanteChatAgent
+
+    _write_session_state(tmp_path, "demo")
+    _write_book_state(tmp_path, "demo")
+
+    prompt_session = FakePromptSession(["继续推进", "exit"])
+    react_agent = FakeReActAgent(responses=["已接住上下文。"])
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        prompt_session_factory=lambda **kwargs: prompt_session,
+        react_agent=react_agent,
+        action_executors={
+            "summarize_ideation": lambda args: {"ok": True, "action": "summarize_ideation"}
+        },
+    )
+
+    result = agent.run()
+
+    assert result.success is True
+    assert react_agent.instructions == ["继续推进"]
+    assert react_agent.calls[0]["kwargs"]["context_messages"]
+    context_text = "\n".join(
+        message.content for message in react_agent.calls[0]["kwargs"]["context_messages"]
+    )
+    assert "会话摘要" in context_text
+    assert "最近轮次" in context_text
+    assert "rolling_outline" in context_text
+    assert "ch_006" in context_text
+
+
+def test_dante_default_react_agent_has_direct_and_action_tool_surface(
+    tmp_path: Path,
+):
+    from tools.agent.dante import DanteChatAgent
+
+    _write_session_state(tmp_path, "demo")
+    _write_book_state(tmp_path, "demo")
+
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        prompt_session_factory=lambda **kwargs: FakePromptSession(["exit"]),
+        react_agent=None,
+        tool_executors={
+            "get_status": lambda args: {"ok": True},
+            "get_context": lambda args: {"ok": True},
+            "list_chapters": lambda args: {"ok": True},
+            "get_truth_files": lambda args: {"ok": True},
+            "query_world": lambda args: {"ok": True},
+            "get_world_relations": lambda args: {"ok": True},
+        },
+        action_executors={
+            "summarize_ideation": lambda args: {"ok": True, "action": "summarize_ideation"},
+            "confirm_ideation_summary": lambda args: {"ok": True, "action": "confirm_ideation_summary"},
+            "generate_outline_draft": lambda args: {"ok": True, "action": "generate_outline_draft"},
+            "run_chapter_preflight": lambda args: {"ok": True, "action": "run_chapter_preflight"},
+        },
+    )
+
+    react_agent = agent._get_react_agent()
+
+    tool_names = {tool.name for tool in react_agent.tools}
+    assert "get_status" in tool_names
+    assert "summarize_ideation" in tool_names
+    assert hasattr(react_agent, "_tool_get_status")
+    assert hasattr(react_agent, "_tool_summarize_ideation")
