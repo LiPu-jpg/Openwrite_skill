@@ -14,6 +14,26 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+EXIT_COMMANDS = {"退出", "quit", "exit", "q"}
+
+
+def is_exit_command(text: str) -> bool:
+    return text.strip().lower() in EXIT_COMMANDS
+
+
+def build_prompt_session(history=None, *, prompt_style: dict[str, str] | None = None):
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import InMemoryHistory
+    from prompt_toolkit.styles import Style
+
+    history = history or InMemoryHistory()
+    style = Style.from_dict(prompt_style or {"prompt": "#ansibrightblue bold"})
+    return PromptSession(history=history, style=style)
+
+
+def build_goethe_prompt_session(history=None):
+    return build_prompt_session(history=history)
+
 
 @dataclass
 class GoetheResult:
@@ -121,10 +141,6 @@ class GoetheChatAgent:
 
     def run(self) -> GoetheResult:
         """运行 Agent"""
-        from prompt_toolkit import PromptSession
-        from prompt_toolkit.history import InMemoryHistory
-        from prompt_toolkit.styles import Style
-
         print("\n" + "=" * 50)
         print("   OpenWrite 小说创作引导")
         print("   (输入 '退出' 可结束对话)")
@@ -152,14 +168,7 @@ class GoetheChatAgent:
             {"role": "assistant", "content": intro},
         ]
 
-        session = PromptSession(
-            history=InMemoryHistory(),
-            style=Style.from_dict(
-                {
-                    "prompt": "#ansibrightblue bold",
-                }
-            ),
-        )
+        session = build_goethe_prompt_session()
 
         try:
             while True:
@@ -169,7 +178,7 @@ class GoetheChatAgent:
                     print("\n\n已取消")
                     return GoetheResult(success=False)
 
-                if user_input.lower() in ["退出", "quit", "exit", "q"]:
+                if is_exit_command(user_input):
                     print("\n好的，随时欢迎回来！")
                     return GoetheResult(success=False)
 

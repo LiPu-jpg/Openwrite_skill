@@ -14,7 +14,7 @@ import os
 import json
 import time
 import logging
-from typing import Optional, Callable, Literal
+from typing import Any, Optional, Callable, Literal
 from dataclasses import dataclass, field
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
@@ -167,9 +167,9 @@ class LLMClient:
             print(chunk, end="")
     """
 
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, client: Any | None = None):
         self.config = config
-        self._client = self._init_client()
+        self._client = client if client is not None else self._init_client()
 
     def _init_client(self):
         """初始化底层客户端"""
