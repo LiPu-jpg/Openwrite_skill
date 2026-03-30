@@ -156,6 +156,31 @@ class SessionStateStore:
             return False
 
         changed = False
+        if state.recent_turns:
+            moved_turns = 0
+            while len(state.recent_turns) > 1 and self._estimate_size(state) > MAX_SESSION_BYTES:
+                old_turn = state.recent_turns.pop(0)
+                state.conversation_summary = self._append_summary(
+                    state.conversation_summary,
+                    self._render_turn(old_turn, MAX_TURN_CONTENT_BYTES),
+                )
+                moved_turns += 1
+            if moved_turns:
+                changed = True
+                self._bound_compression_markers(state)
+                if self._estimate_size(state) <= MAX_SESSION_BYTES:
+                    state.compression_markers.append(
+                        CompressionMarker(
+                            compressed_at=datetime.now().isoformat(),
+                            dropped_turns=moved_turns,
+                            kept_turns=len(state.recent_turns),
+                            reason="size",
+                        )
+                    )
+                    self._bound_compression_markers(state)
+                    self._enforce_size_after_marker(state)
+                    return True
+
         summary_budget = MAX_SUMMARY_BYTES
         turn_budget = MAX_TURN_CONTENT_BYTES
 
@@ -482,7 +507,7 @@ class SessionStateStore:
         if isinstance(value, str):
             return self._truncate_text(value, budget, keep_tail=False)
         if isinstance(value, list):
-            return [self._compact_value(item, budget) for item in value[:8]]
+            return [self._compact_value(item, budget) for item in value[-8:]]
         if isinstance(value, dict):
             return self._compact_mapping(value, budget, 8)
         return value

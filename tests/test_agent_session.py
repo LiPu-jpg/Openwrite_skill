@@ -187,6 +187,22 @@ def test_save_compresses_huge_turns_by_size(tmp_path: Path):
     assert loaded.compression_markers[-1].reason == "size"
 
 
+def test_save_by_size_preserves_older_turn_content_in_summary(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    huge_text = "x" * (MAX_SESSION_BYTES)
+    state = DanteSessionState(session_id="demo")
+    state.recent_turns = [
+        SessionTurn(role="user", content=f"older {huge_text}"),
+        SessionTurn(role="assistant", content="tail"),
+    ]
+
+    store.save(state)
+    loaded = store.load_or_create()
+
+    assert "older" in loaded.conversation_summary
+    assert loaded.recent_turns[-1].content == "tail"
+
+
 def test_save_compresses_oversized_metadata_payload(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     huge_text = "x" * (MAX_SESSION_BYTES)
@@ -365,6 +381,28 @@ def test_save_stringifies_unsafe_working_memory_values(tmp_path: Path):
 
     assert reloaded["working_memory"]["nested"]["unsafe"].startswith("<")
     assert reloaded["working_memory"]["nested"]["list"][0].startswith("<")
+
+
+def test_save_nested_working_memory_lists_keep_newest_entries(tmp_path: Path):
+    store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.working_memory = {
+        "notes": [f"item-{index}-" + ("x" * MAX_SESSION_BYTES) for index in range(10)]
+    }
+
+    store.save(state)
+    reloaded = yaml.safe_load(store.path.read_text(encoding="utf-8"))
+
+    assert [item.split("-", 2)[1] for item in reloaded["working_memory"]["notes"]] == [
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+    ]
 
 
 def test_save_stringifies_non_string_lists_and_scalars(tmp_path: Path):
