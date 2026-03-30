@@ -55,6 +55,43 @@ def test_save_compresses_old_turns_into_summary(tmp_path: Path):
     assert loaded.compression_markers[-1].kept_turns == MAX_RECENT_TURNS
 
 
+def test_load_or_create_compresses_existing_overlong_session_and_keeps_recent_window(
+    tmp_path: Path,
+):
+    store = SessionStateStore(tmp_path, "demo")
+    store.path.parent.mkdir(parents=True, exist_ok=True)
+    store.path.write_text(
+        yaml.safe_dump(
+            {
+                "session_id": "demo",
+                "active_agent": "dante",
+                "conversation_summary": "seed summary",
+                "recent_turns": [
+                    {"role": "user", "content": f"turn-{index:02d}"}
+                    for index in range(MAX_RECENT_TURNS + 3)
+                ],
+                "working_memory": {"topic": "outline"},
+                "open_questions": ["confirm premise"],
+                "recent_files": ["src/chapter_1.md"],
+                "last_action": "chat",
+                "compression_markers": [],
+                "updated_at": "2026-03-30T10:05:00",
+            },
+            allow_unicode=True,
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    state = store.load_or_create()
+
+    assert len(state.recent_turns) == MAX_RECENT_TURNS
+    assert state.conversation_summary != "seed summary"
+    assert "turn-00" in state.conversation_summary
+    assert state.compression_markers[-1].reason == "count"
+    assert state.compression_markers[-1].kept_turns == MAX_RECENT_TURNS
+
+
 def test_load_or_create_restores_valid_existing_session(tmp_path: Path):
     store = SessionStateStore(tmp_path, "demo")
     store.path.parent.mkdir(parents=True, exist_ok=True)

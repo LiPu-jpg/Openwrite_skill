@@ -8,7 +8,12 @@ import yaml
 
 from tools.agent.book_state import BookStage
 from tools.agent.react import ToolDefinition
-from tools.agent.session_state import DanteSessionState, SessionTurn
+from tools.agent.session_state import (
+    DanteSessionState,
+    SessionTurn,
+    MAX_RECENT_TURNS,
+    MAX_SESSION_BYTES,
+)
 
 
 @dataclass
@@ -201,6 +206,87 @@ def test_dante_recovery_prompt_mentions_loaded_state(tmp_path: Path):
     assert "outline_scope" in prompt
     assert "都市职场异能" in prompt
     assert "主角是否主动入局" in prompt
+
+
+def test_dante_run_compresses_session_after_many_turns(tmp_path: Path):
+    from tools.agent.dante import DanteChatAgent
+
+    _write_session_state(tmp_path, "demo")
+    _write_book_state(tmp_path, "demo")
+
+    prompt_session = FakePromptSession(
+        [f"第{index:02d}轮追问" for index in range(MAX_RECENT_TURNS + 1)] + ["exit"]
+    )
+    react_agent = FakeReActAgent(
+        responses=[f"回应-{index:02d}" for index in range(MAX_RECENT_TURNS + 1)]
+    )
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        prompt_session_factory=lambda **kwargs: prompt_session,
+        react_agent=react_agent,
+    )
+
+    result = agent.run()
+    persisted = yaml.safe_load(agent.session_store.path.read_text(encoding="utf-8"))
+
+    assert result.success is True
+    assert persisted["compression_markers"][-1]["reason"] == "count"
+    assert len(persisted["recent_turns"]) == MAX_RECENT_TURNS
+    assert persisted["conversation_summary"]
+    assert "第00轮追问" in persisted["conversation_summary"]
+
+
+def test_dante_run_compresses_session_after_large_response(tmp_path: Path):
+    from tools.agent.dante import DanteChatAgent
+
+    _write_session_state(tmp_path, "demo")
+    _write_book_state(tmp_path, "demo")
+
+    huge_text = "x" * (MAX_SESSION_BYTES * 2)
+    prompt_session = FakePromptSession(["请展开当前设定", "exit"])
+    react_agent = FakeReActAgent(responses=[f"章节内容:{huge_text}"])
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        prompt_session_factory=lambda **kwargs: prompt_session,
+        react_agent=react_agent,
+    )
+
+    result = agent.run()
+    persisted = yaml.safe_load(agent.session_store.path.read_text(encoding="utf-8"))
+
+    assert result.success is True
+    assert persisted["compression_markers"][-1]["reason"] == "size"
+    assert len(persisted["recent_turns"]) >= 1
+    assert persisted["conversation_summary"]
+
+
+def test_dante_startup_after_compression_keeps_summary_and_recent_window(tmp_path: Path):
+    from tools.agent.dante import DanteChatAgent
+    from tools.agent.session_state import SessionStateStore, DanteSessionState, SessionTurn
+
+    session_store = SessionStateStore(tmp_path, "demo")
+    state = DanteSessionState(session_id="demo")
+    state.recent_turns = [
+        SessionTurn(role="user", content=f"old-{index:02d}")
+        for index in range(MAX_RECENT_TURNS + 4)
+    ]
+    session_store.save(state)
+    _write_book_state(tmp_path, "demo")
+
+    agent = DanteChatAgent(
+        project_root=tmp_path,
+        novel_id="demo",
+        react_agent=FakeReActAgent(),
+    )
+
+    startup = agent.startup()
+
+    assert startup.session_state.conversation_summary
+    assert startup.session_state.recent_turns
+    assert len(startup.session_state.recent_turns) == MAX_RECENT_TURNS
+    assert "old-00" in startup.recovery_prompt or "old-00" in startup.session_state.conversation_summary
 
 
 def test_dante_passes_session_memory_and_book_state_into_react(
