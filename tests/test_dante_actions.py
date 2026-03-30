@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.agent.book_state import BookStage, BookStateStore
 from tools.agent.dante_actions import DanteActionAdapter
-from tools.agent.orchestrator import OpenWriteOrchestrator
+from tools.agent.orchestrator import OpenWriteOrchestrator, OrchestratorResult
 from tools.story_planning import StoryPlanningStore
 
 
@@ -115,6 +115,76 @@ def test_dante_action_adapter_delegates_public_orchestrator_actions(tmp_path: Pa
         "generate_outline_draft",
         "run_chapter_preflight",
     ]
+
+
+def test_dante_action_adapter_skips_outline_draft_when_generation_blocked():
+    class FakeOrchestrator:
+        def summarize_ideation(self):
+            return {"ok": True, "next_action": "confirm_ideation_summary"}
+
+        def confirm_ideation_summary(self, text: str):
+            return {"ok": True, "next_action": "ready_for_outline_generation"}
+
+        def generate_outline_draft(self, request_text: str):
+            return OrchestratorResult(
+                message="blocked",
+                stage=BookStage.ROLLING_OUTLINE,
+                blocked=True,
+                next_action="blocked",
+            )
+
+        def run_chapter_preflight(self, chapter_id: str):
+            return {"ok": True, "chapter_id": chapter_id}
+
+        story_planning_store = type(
+            "StoryPlanningStoreProxy",
+            (),
+            {
+                "read_outline_draft": lambda self, max_chars=0: "# 测试小说\n" + ("x" * 4000),
+            },
+        )()
+
+    adapter = DanteActionAdapter(FakeOrchestrator())
+
+    payload = adapter.generate_outline_draft("帮我生成一份四级大纲")
+
+    assert payload["blocked"] is True
+    assert "outline_draft" not in payload
+
+
+def test_dante_action_adapter_bounds_outline_draft_payload(tmp_path: Path):
+    huge_outline = "# 测试小说\n" + ("x" * 5000)
+
+    class FakeOrchestrator:
+        def summarize_ideation(self):
+            return {"ok": True, "next_action": "confirm_ideation_summary"}
+
+        def confirm_ideation_summary(self, text: str):
+            return {"ok": True, "next_action": "ready_for_outline_generation"}
+
+        def generate_outline_draft(self, request_text: str):
+            return {
+                "ok": True,
+                "blocked": False,
+                "next_action": "request_outline_confirmation",
+            }
+
+        def run_chapter_preflight(self, chapter_id: str):
+            return {"ok": True, "chapter_id": chapter_id}
+
+        story_planning_store = type(
+            "StoryPlanningStoreProxy",
+            (),
+            {"read_outline_draft": lambda self, max_chars=0: huge_outline[:max_chars] if max_chars else huge_outline},
+        )()
+
+    adapter = DanteActionAdapter(FakeOrchestrator())
+
+    payload = adapter.generate_outline_draft("帮我生成一份四级大纲")
+
+    assert payload["action"] == "generate_outline_draft"
+    assert len(payload["outline_draft"]) <= 1200
+    assert payload["outline_draft"].startswith("# 测试小说")
 
 
 def test_orchestrator_public_actions_drive_planning_flow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

@@ -6,6 +6,8 @@ from typing import Any
 
 from .orchestrator import OpenWriteOrchestrator, OrchestratorResult
 
+OUTLINE_DRAFT_MAX_CHARS = 1200
+
 
 class DanteActionAdapter:
     def __init__(self, orchestrator: OpenWriteOrchestrator):
@@ -25,9 +27,12 @@ class DanteActionAdapter:
             "generate_outline_draft",
             self.orchestrator.generate_outline_draft(request_text),
         )
-        planning_store = getattr(self.orchestrator, "story_planning_store", None)
-        if planning_store is not None and hasattr(planning_store, "read_outline_draft"):
-            payload["outline_draft"] = planning_store.read_outline_draft()
+        if payload.get("ok", True) and not payload.get("blocked", False):
+            planning_store = getattr(self.orchestrator, "story_planning_store", None)
+            if planning_store is not None and hasattr(planning_store, "read_outline_draft"):
+                payload["outline_draft"] = planning_store.read_outline_draft(
+                    max_chars=OUTLINE_DRAFT_MAX_CHARS
+                )
         return payload
 
     def run_chapter_preflight(self, chapter_id: str) -> dict[str, Any]:
