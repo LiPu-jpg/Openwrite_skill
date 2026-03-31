@@ -1,6 +1,9 @@
 <p align="center">
-  <img src="assets/logo-light.svg#gh-light-mode-only" width="360" alt="OpenWrite">
-  <img src="assets/logo-dark.svg#gh-dark-mode-only" width="360" alt="OpenWrite">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
+    <img src="assets/logo-light.svg" width="360" alt="OpenWrite">
+  </picture>
 </p>
 
 <h1 align="center">Autonomous Novel Writing CLI AI Agent<br><sub>自动化长篇小说写作 CLI AI Agent</sub></h1>
