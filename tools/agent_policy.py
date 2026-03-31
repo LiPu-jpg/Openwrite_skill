@@ -30,7 +30,7 @@ DEFAULT_AGENT_SPECS: Dict[str, AgentSpec] = {
         name="context_engineer",
         role="组装章节上下文，保证事实完整",
         required=True,
-        can_read=["src:*", "runtime:*", "craft:*", "reference_styles:*"],
+        can_read=["src:*", "runtime:*", "craft:*", "sources:*"],
         can_write=["packet:build"],
         forbidden=["manuscript:*", "world:*", "characters:*"],
     ),

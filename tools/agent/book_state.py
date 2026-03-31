@@ -32,6 +32,7 @@ class BookState:
     pending_confirmation: str = ""
     blocking_reason: str = ""
     last_agent_action: str = ""
+    last_handoff_from: str = ""
 
 
 class BookStateStore:
@@ -115,4 +116,5 @@ class BookStateStore:
             pending_confirmation=data.get("pending_confirmation", ""),
             blocking_reason=data.get("blocking_reason", ""),
             last_agent_action=data.get("last_agent_action", ""),
+            last_handoff_from=data.get("last_handoff_from", ""),
         )

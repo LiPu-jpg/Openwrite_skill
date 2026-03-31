@@ -1,4 +1,4 @@
-<svg width="420" height="100" viewBox="0 0 420 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="312" height="100" viewBox="0 0 312 100" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bookFill" x1="18" y1="28" x2="82" y2="78" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F8FBFF"/>
@@ -34,7 +34,7 @@
       <path d="M48 67C53 59 60 47 71 33" stroke="#DBEAFE" stroke-width="1.4" stroke-linecap="round" opacity="0.85"/>
     </g>
   </g>
-  <text x="95" y="62" font-family="Inter, SF Pro Display, Segoe UI, Arial, sans-serif" font-size="38" font-weight="600" letter-spacing="-1" fill="#0F172A">Open</text>
-  <text x="185" y="62" font-family="Inter, SF Pro Display, Segoe UI, Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="-1" fill="url(#writeGradient)">Write</text>
-  <path d="M187 70C205 68 223 68 241 70C259 72 277 72 295 70" stroke="#BFDBFE" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
+  <text x="95" y="62" fill="#0F172A" font-family="Georgia, Times New Roman, serif" font-size="38" font-weight="700" letter-spacing="-1">Open</text>
+  <text x="192" y="62" fill="url(#writeGradient)" font-family="Georgia, Times New Roman, serif" font-size="38" font-weight="700" letter-spacing="-1">Write</text>
+  <path d="M194 70C212 68 230 68 248 70C266 72 284 72 302 70" stroke="#BFDBFE" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
 </svg>

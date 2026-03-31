@@ -16,11 +16,11 @@ class OutlineMdSerializer:
 
     格式示例：
     ```markdown
-    # 术师手册
+    # 城市异象录
 
     > 核心主题: 成长与选择
     > 结局走向: 开放式结局
-    > 世界前提: 现代都市隐藏着术师世界
+    > 世界前提: 现代都市隐藏着异常世界
     > 基调: 轻松幽默中带点严肃
     > 目标字数: 2000000
 
@@ -34,7 +34,7 @@ class OutlineMdSerializer:
 
     > 主题: 从普通人到术师
     > 起止章节: ch_001 - ch_020
-    > 摘要: 主角李逍遥意外觉醒术师能力
+    > 摘要: 主角意外觉醒异常感知能力
 
     ### 第一节：初入术界
 
@@ -116,13 +116,13 @@ class OutlineMdSerializer:
             metadata.append(f"> 基调: {node.tone}")
         if node.word_count_target:
             metadata.append(f"> 目标字数: {node.word_count_target}")
-        if node.summary:
-            metadata.append(
-                f"> 摘要: {node.summary[:100]}{'...' if len(node.summary) > 100 else ''}"
-            )
 
         if metadata:
             lines.extend(metadata)
+            lines.append("")
+
+        if node.summary:
+            lines.extend(node.summary.strip().splitlines())
             lines.append("")
 
         return lines

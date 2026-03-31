@@ -1,4 +1,5 @@
 import sys
+import builtins
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,79 +38,140 @@ def test_cmd_init_uses_default_initializer_and_returns_zero(
     assert (tmp_path / "data" / "novels" / "demo" / "src" / "outline.md").exists()
 
 
-def test_cmd_agent_routes_through_orchestrator(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
-    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+def test_cmd_goethe_routes_to_goethe_runner(monkeypatch: pytest.MonkeyPatch):
+    import tools.goethe as goethe_module
 
-    expected_tool_executors = {"get_status": lambda args: {"ok": True}}
-    tool_executor_calls: list[Path] = []
+    calls = {"count": 0}
 
-    def fake_build_tool_executors(project_root: Path):
-        tool_executor_calls.append(project_root)
-        return expected_tool_executors
+    monkeypatch.setattr(goethe_module, "run_goethe", lambda: calls.__setitem__("count", calls["count"] + 1) or 0)
 
-    orchestrator_calls: dict[str, object] = {}
-
-    class FakeOrchestrator:
-        def __init__(self, project_root: Path, novel_id: str, tool_executors):
-            orchestrator_calls["project_root"] = project_root
-            orchestrator_calls["novel_id"] = novel_id
-            orchestrator_calls["tool_executors"] = tool_executors
-
-        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
-            orchestrator_calls["instruction"] = instruction
-            orchestrator_calls["quiet"] = quiet
-            orchestrator_calls["max_turns"] = max_turns
-            return 0
-
-    monkeypatch.setattr(tool_runtime_module, "build_tool_executors", fake_build_tool_executors)
-    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
-
-    result = cli_module._cmd_agent(_fake_args("查看项目状态", max_turns=7, quiet=True))
-
-    assert result == 0
-    assert tool_executor_calls == [tmp_path]
-    assert orchestrator_calls["project_root"] == tmp_path
-    assert orchestrator_calls["novel_id"] == "demo"
-    assert orchestrator_calls["tool_executors"] is expected_tool_executors
-    assert orchestrator_calls["instruction"] == "查看项目状态"
-    assert orchestrator_calls["quiet"] is True
-    assert orchestrator_calls["max_turns"] == 7
+    assert cli_module._cmd_goethe(SimpleNamespace()) == 0
+    assert calls["count"] == 1
 
 
-def test_cmd_agent_does_not_require_llm_client_setup(
+def test_build_prompt_session_falls_back_without_prompt_toolkit(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import tools.goethe as goethe_module
+
+    real_import = builtins.__import__
+    prompts: list[str] = []
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name.startswith("prompt_toolkit"):
+            raise ImportError("prompt_toolkit missing")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt="": prompts.append(prompt) or "exit",
+    )
+
+    session = goethe_module.build_prompt_session()
+
+    assert session.prompt("🕯️ Dante> ") == "exit"
+    assert prompts == ["🕯️ Dante> "]
+
+
+def test_main_rejects_legacy_wizard_command(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "wizard"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+
+    assert exc.value.code == 2
+
+
+def test_cmd_dante_routes_to_dante_runner(monkeypatch: pytest.MonkeyPatch):
+    import tools.agent.dante as dante_module
+
+    calls = {"count": 0}
+
+    monkeypatch.setattr(
+        dante_module,
+        "run_dante",
+        lambda: calls.__setitem__("count", calls["count"] + 1) or 17,
+    )
+
+    result = cli_module._cmd_dante(_fake_args("查看项目状态", max_turns=7, quiet=True))
+
+    assert result == 17
+    assert calls["count"] == 1
+
+
+def test_cmd_dante_no_longer_uses_orchestrator_bridge(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
     monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
-    monkeypatch.setattr(tool_runtime_module, "build_tool_executors", lambda project_root: {})
+    import tools.agent.dante as dante_module
 
-    import tools.llm as llm_module
+    orchestrator_called = {"value": False}
+    tool_runtime_called = {"value": False}
 
     def forbidden(*args, **kwargs):
-        raise AssertionError("LLM client setup should not be touched")
+        orchestrator_called["value"] = True
+        raise AssertionError("orchestrator bridge should not be used")
 
-    monkeypatch.setattr(llm_module, "LLMClient", forbidden)
-    monkeypatch.setattr(llm_module.LLMConfig, "from_env", classmethod(lambda cls: forbidden()))
+    def forbidden_tool_runtime(*args, **kwargs):
+        tool_runtime_called["value"] = True
+        raise AssertionError("tool runtime bridge should not be used")
 
-    class FakeOrchestrator:
-        def __init__(self, project_root: Path, novel_id: str, tool_executors):
-            self.project_root = project_root
-            self.novel_id = novel_id
-            self.tool_executors = tool_executors
+    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", forbidden)
+    monkeypatch.setattr(
+        tool_runtime_module,
+        "build_tool_executors",
+        forbidden_tool_runtime,
+    )
+    monkeypatch.setattr(dante_module, "run_dante", lambda: 0)
 
-        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
-            return 0
-
-    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
-
-    assert cli_module._cmd_agent(_fake_args("基础设定准备好了")) == 0
+    assert cli_module._cmd_dante(_fake_args("基础设定准备好了")) == 0
+    assert orchestrator_called["value"] is False
+    assert tool_runtime_called["value"] is False
 
 
-def test_cmd_agent_requires_project_config_before_initializing_orchestrator(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_dante_help_no_longer_mentions_placeholder(monkeypatch: pytest.MonkeyPatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "dante", "--help"])
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
+
+    captured = capsys.readouterr()
+
+    assert exc.value.code == 0
+    assert "占位" not in captured.out
+    assert "待实现" not in captured.out
+    assert "过渡性主入口" not in captured.out
+    assert "复用现有确定性编排器" not in captured.out
+    assert "长期会话主入口" in captured.out
+
+
+def test_cmd_dante_reports_dante_named_import_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ):
     monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "tools.agent.dante":
+            raise ImportError("missing runtime")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    with caplog.at_level("ERROR"):
+        result = cli_module._cmd_dante(_fake_args("查看项目状态"))
+
+    assert result == 1
+    assert "Dante 模块未安装" in caplog.text
+
+
+def test_cmd_agent_is_retired_and_tells_users_to_use_dante(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
+
     called = {"value": False}
 
     def forbidden(*args, **kwargs):
@@ -118,45 +180,28 @@ def test_cmd_agent_requires_project_config_before_initializing_orchestrator(
 
     monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", forbidden)
 
-    assert cli_module._cmd_agent(_fake_args("查看项目状态")) == 1
+    with caplog.at_level("ERROR"):
+        result = cli_module._cmd_agent(_fake_args("查看项目状态"))
+
+    assert result == 1
     assert called["value"] is False
+    assert "openwrite agent 已退役" in caplog.text
+    assert "openwrite dante" in caplog.text
 
 
-def test_cmd_agent_passes_instruction_and_returns_orchestrator_exit_code(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    (tmp_path / "novel_config.yaml").write_text("novel_id: demo\n", encoding="utf-8")
-    monkeypatch.setattr(cli_module, "Path", SimpleNamespace(cwd=lambda: tmp_path))
-    monkeypatch.setattr(
-        tool_runtime_module,
-        "build_tool_executors",
-        lambda project_root: {"get_status": lambda args: {"ok": True}},
-    )
+def test_agent_help_only_reports_retired_status(monkeypatch: pytest.MonkeyPatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["openwrite", "agent", "--help"])
 
-    run_cli_calls: dict[str, object] = {}
+    with pytest.raises(SystemExit) as exc:
+        cli_module.main()
 
-    class FakeOrchestrator:
-        def __init__(self, project_root: Path, novel_id: str, tool_executors):
-            self.project_root = project_root
-            self.novel_id = novel_id
-            self.tool_executors = tool_executors
+    captured = capsys.readouterr()
 
-        def run_cli(self, instruction: str, *, quiet: bool = False, max_turns: int = 20) -> int:
-            run_cli_calls["instruction"] = instruction
-            run_cli_calls["quiet"] = quiet
-            run_cli_calls["max_turns"] = max_turns
-            return 17
-
-    monkeypatch.setattr(orchestrator_module, "OpenWriteOrchestrator", FakeOrchestrator)
-
-    result = cli_module._cmd_agent(_fake_args("写 ch_001", max_turns=9, quiet=False))
-
-    assert result == 17
-    assert run_cli_calls == {
-        "instruction": "写 ch_001",
-        "quiet": False,
-        "max_turns": 9,
-    }
+    assert exc.value.code == 0
+    assert "已退役" in captured.out
+    assert "instruction" not in captured.out
+    assert "--max-turns" not in captured.out
+    assert "--quiet" not in captured.out
 
 
 def test_run_cli_status_instruction_is_read_only(tmp_path: Path):
@@ -310,6 +355,8 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
                 "style_documents": {
                     "summary": "冷峻节奏",
                     "prompt_section": "短句推进",
+                    "work.composed": "# 合成风格\n\n克制冷硬，避免解释性总结。",
+                    "craft.dialogue_craft": "# 对话技法\n\n对话短促，避免解释性台词。",
                 },
                 "character_documents": ["# 主角档案\n\n冷静谨慎。"],
                 "concept_documents": {
@@ -341,6 +388,8 @@ def test_exec_write_chapter_uses_asyncio_run_without_missing_import(
     assert "背景设定" in captured["context"]["external_context"]
     assert "基础设定" in captured["context"]["external_context"]
     assert "偏冷峻" in captured["context"]["external_context"]
+    assert "克制冷硬" in captured["context"]["style_profile"]
+    assert "对话短促" in captured["context"]["style_profile"]
     assert captured["context"]["current_state"] == "运行态现状"
     assert captured["context"]["foreshadowing_summary"] == "伏笔A"
     assert captured["context"]["recent_chapters"] == "上一章正文"

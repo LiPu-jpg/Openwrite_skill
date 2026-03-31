@@ -69,7 +69,7 @@ class ContextBuilder:
         Args:
             project_root: 项目根目录（包含 craft/, data/）
             novel_id: 当前小说 ID
-            reference_style: 参考风格作品名（对应 data/reference_styles/{name}/）
+            reference_style: 项目内提取风格源 ID（对应 data/novels/{id}/data/sources/{name}/style/）
         """
         self.project_root = project_root.resolve()
         self.novel_id = novel_id
@@ -80,9 +80,7 @@ class ContextBuilder:
         self.src_dir = self.novel_dir / "src"
         self.data_dir = self.novel_dir / "data"
         self.ref_style_dir = (
-            project_root / "data" / "reference_styles" / reference_style
-            if reference_style
-            else None
+            self.data_dir / "sources" / reference_style / "style" if reference_style else None
         )
         self.craft_dir = project_root / "craft"
 
@@ -548,7 +546,7 @@ class ContextBuilder:
         """合成三层风格架构
 
         Layer 1: craft/ - 通用写作技法
-        Layer 2: data/reference_styles/{name}/ - 参考作品风格指纹
+        Layer 2: data/novels/{id}/data/sources/{name}/style/ - 用户提取风格源
         Layer 3: data/novels/{id}/ - 作品设定（角色/世界观/自身风格）
         """
         profile = StyleProfile(novel_id=self.novel_id)
@@ -557,7 +555,7 @@ class ContextBuilder:
         craft_rules = self._load_craft_rules()
         profile.craft_rules = craft_rules
 
-        # 2. 加载参考风格 (data/reference_styles/{name}/)
+        # 2. 加载项目内提取风格源
         voice, language, rhythm = self._load_reference_style()
         if voice:
             profile.voice = voice
@@ -603,7 +601,7 @@ class ContextBuilder:
     def _load_reference_style(
         self,
     ) -> tuple[Optional[VoicePattern], Optional[LanguageStyle], Optional[RhythmStyle]]:
-        """加载参考作品风格（从 data/reference_styles/{name}/ 读取）"""
+        """加载项目内提取风格源（从 data/novels/{id}/data/sources/{name}/style/ 读取）"""
         voice = None
         language = None
         rhythm = None

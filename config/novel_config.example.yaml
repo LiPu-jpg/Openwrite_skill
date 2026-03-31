@@ -7,8 +7,8 @@
 # 小说 ID（对应 data/novels/{novel_id}/ 目录名）
 novel_id: my_novel
 
-# 参考风格 ID（对应 data/reference_styles/{style_id}/）
-# 留空则不使用参考风格
+# 提取风格源 ID（对应 data/novels/{novel_id}/data/sources/{style_id}/）
+# 留空则仅使用通用 craft + 本书风格指纹
 style_id: ""
 
 # 当前写作进度（由工具自动更新）
@@ -17,9 +17,8 @@ current_chapter: ch_001
 
 # --- 以下为可选配置 ---
 
-# 目标风格参考作品（可选，用于风格合成）
-# 可选值: 术师手册 / 谁让他修仙的 / 天启预报 / 牧者密续 / 不许没收我的人籍 / 我师兄实在太稳健了
-# reference_style: 术师手册
+# 目标提取风格源（可选，用于风格合成）
+# 示例: style_id: office_excerpt
 
 # 章节默认字数（可选）
 # default_word_count: 4000

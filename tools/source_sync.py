@@ -1,4 +1,10 @@
-"""Shared source/runtime sync freshness helpers."""
+"""Shared source/runtime sync freshness helpers.
+
+`src/` 是人工和 agent 共读的 canonical 真源，`data/` 里有一部分文件只是派生缓存。
+这个模块只做两件事：
+- 判断这些派生文件是否已经落后于 `src/`
+- 在运行时读取前尽量自动修复，修不好就硬失败
+"""
 
 from __future__ import annotations
 
@@ -15,6 +21,7 @@ def collect_sync_status(project_root: Path, novel_id: str) -> Dict[str, Any]:
     outline_src = src_root / "outline.md"
     hierarchy = data_root / "hierarchy.yaml"
 
+    # outline/hierarchy 和 characters/cards 都属于从 src 派生的缓存，因此这里检查的是“新鲜度”，不是“业务完整度”。
     outline_pending = False
     if outline_src.exists():
         outline_pending = (not hierarchy.exists()) or (
@@ -64,6 +71,7 @@ def run_sync(
     data_root = novel_root / "data"
     data_root.mkdir(parents=True, exist_ok=True)
 
+    # 只同步存在且已请求的派生物，避免无关目录被意外创建或刷新。
     outline_src = src_root / "outline.md"
     if sync_outline and outline_src.exists():
         sync_outline_to_hierarchy(src_root, data_root)
@@ -78,6 +86,7 @@ def ensure_runtime_fresh(project_root: Path, novel_id: str) -> Dict[str, Any]:
     Returns the final status and whether an auto-sync occurred.
     Raises RuntimeError when files are still stale after attempting sync.
     """
+    # 运行时优先尝试“自动纠偏一次”，让普通读取链不必手工先跑 sync。
     before = collect_sync_status(project_root, novel_id)
     if not before["needs_sync"]:
         return {**before, "auto_synced": False}
@@ -88,6 +97,7 @@ def ensure_runtime_fresh(project_root: Path, novel_id: str) -> Dict[str, Any]:
         sync_outline=before["outline_pending"],
         sync_characters=bool(before["missing_cards"] or before["stale_cards"]),
     )
+    # 如果自动同步后仍然陈旧，就说明不是简单 freshness 问题，而是源文件/格式本身异常。
     after = collect_sync_status(project_root, novel_id)
     if after["needs_sync"]:
         raise RuntimeError(

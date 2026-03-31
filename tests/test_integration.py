@@ -61,10 +61,12 @@ class TestInitProject:
     def test_init_creates_outline(self, tmp_path):
         init_project(tmp_path, "my_novel")
         outline = tmp_path / "data" / "novels" / "my_novel" / "data" / "hierarchy.yaml"
+        outline_src = tmp_path / "data" / "novels" / "my_novel" / "src" / "outline.md"
         assert outline.exists()
         data = yaml.safe_load(outline.read_text(encoding="utf-8"))
         assert "story_info" in data
         assert "chapters" in data
+        assert "故事简介" in outline_src.read_text(encoding="utf-8")
 
     def test_init_creates_world_files(self, tmp_path):
         init_project(tmp_path, "my_novel")

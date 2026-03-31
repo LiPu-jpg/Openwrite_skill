@@ -15,25 +15,38 @@ def test_test_novel_is_a_rich_standard_sample_fixture():
     background_meta, background_body = parse_toml_front_matter(
         (NOVEL_ROOT / "src" / "story" / "background.md").read_text(encoding="utf-8")
     )
+    background_draft = (NOVEL_ROOT / "data" / "planning" / "background_draft.md").read_text(
+        encoding="utf-8"
+    )
     foundation_meta, foundation_body = parse_toml_front_matter(
         (NOVEL_ROOT / "src" / "story" / "foundation.md").read_text(encoding="utf-8")
+    )
+    foundation_draft = (NOVEL_ROOT / "data" / "planning" / "foundation_draft.md").read_text(
+        encoding="utf-8"
     )
 
     assert len(str(background_meta.get("summary", ""))) >= 40
     assert len(background_body.strip()) >= 300
     assert len(str(foundation_meta.get("summary", ""))) >= 40
     assert len(foundation_body.strip()) >= 300
+    assert (NOVEL_ROOT / "src" / "story" / "background.md").read_text(encoding="utf-8") == background_draft
+    assert (NOVEL_ROOT / "src" / "story" / "foundation.md").read_text(encoding="utf-8") == foundation_draft
 
     outline = OutlineMdParser().parse(
         (NOVEL_ROOT / "src" / "outline.md").read_text(encoding="utf-8"),
         "test_novel",
     )
+    assert outline.master is not None
+    assert len(outline.master.summary.strip()) >= 120
     assert len(outline.chapters) >= 20
     assert len(outline.sections) >= 5
 
+    outline_src = (NOVEL_ROOT / "src" / "outline.md").read_text(encoding="utf-8")
     outline_draft = (NOVEL_ROOT / "data" / "planning" / "outline_draft.md").read_text(
         encoding="utf-8"
     )
+    assert outline_src == outline_draft
+    assert "OPENWRITE:LONG_RANGE_PLAN:START" in outline_src
     assert "全书长线规划" in outline_draft
     assert "ch_351" in outline_draft
     assert "ch_520" in outline_draft

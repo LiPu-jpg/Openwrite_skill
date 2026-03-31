@@ -153,6 +153,6 @@ if __name__ == "__main__":
         print(f"  {case} -> {parse_chapter_id(case)}")
 
     print("\nID生成测试:")
-    names = ["张三", "李逍遥", "琅琊阁"]
+    names = ["张三", "林川", "天衡档案馆"]
     for name in names:
         print(f"  {name} -> {generate_id(name)}")

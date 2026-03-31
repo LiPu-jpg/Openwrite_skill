@@ -105,7 +105,7 @@ AI: 🔍 逻辑检查：第五章
 1. **角色状态**: 张三在 ch_004 受伤，但 ch_005 直接战斗未说明恢复
    - 建议: 添加伤势恢复的描述
 
-2. **世界观**: 琅琊阁需要令牌才能进入，但张三直接进入
+2. **世界观**: 档案馆需要凭证才能进入，但角色直接进入
    - 建议: 说明令牌来源或进入方式
 
 ### ❌ 错误 (0)
@@ -207,7 +207,7 @@ AI: 📋 完整审查报告：第五章
 
 ### 警告详情
 1. [角色状态] 张三伤势未说明恢复
-2. [世界观] 琅琊阁进入方式未说明
+2. [世界观] 档案馆进入方式未说明
 
 ## 二、风格检查
 
@@ -279,7 +279,7 @@ AI: ✨ 风格润色中...
 |------|------|
 | 读取草稿 | `data/novels/{id}/data/manuscript/` |
 | 读取合成风格 | `data/novels/{id}/data/style/composed.md` |
-| 读取参考风格 | `data/reference_styles/{参考作品}/` |
+| 读取提取风格源 | `data/novels/{id}/data/sources/{source_id}/style/` |
 | 读取角色设定 | `data/novels/{id}/src/characters/` + `data/novels/{id}/data/characters/cards/` |
 | 读取世界观 | `data/novels/{id}/src/world/` + `data/novels/{id}/data/world/` |
 | 写入润色 | `data/novels/{id}/data/manuscript/` |

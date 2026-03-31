@@ -7,6 +7,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from tools.agent.book_state import BookStage, BookStateStore
+from tools.agent.dante_actions import DanteActionAdapter
 from tools.agent.orchestrator import OpenWriteOrchestrator
 from tools.agent.toolkits import WRITING_TOOLKIT
 from tools.frontmatter import parse_toml_front_matter
@@ -123,6 +124,168 @@ def test_discovery_appends_ideation_and_stays_in_discovery(tmp_path: Path):
     assert result.next_action == "request_more_background"
     assert "主角是普通上班族" in planning_store.ideation_path.read_text(encoding="utf-8")
     assert "背景" in result.message
+
+
+def test_discovery_summary_request_generates_summary_and_waits_for_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.append_ideation("主角是普通上班族")
+    planning_store.append_ideation("公司地下埋着异常节点")
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_chat_text",
+        lambda system_prompt, user_prompt, **kwargs: "# 当前想法汇总\n\n## 核心方向\n\n- 都市职场异能",
+    )
+
+    result = orchestrator.handle_user_message("先帮我汇总一下当前想法")
+
+    state = state_store.load_or_create()
+    assert result.blocked is False
+    assert result.next_action == "confirm_ideation_summary"
+    assert state.pending_confirmation == "ideation_summary"
+    assert state.last_agent_action == "generated_ideation_summary"
+    assert planning_store.ideation_summary_path.exists()
+    assert "都市职场异能" in planning_store.ideation_summary_path.read_text(encoding="utf-8")
+
+
+def test_dante_actions_require_summary_confirmation_before_outline_generation(
+    tmp_path: Path,
+):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.append_ideation("主角是普通上班族")
+    planning_store.save_ideation_summary("# 当前想法汇总\n\n- 都市职场异能")
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    adapter = DanteActionAdapter(orchestrator)
+
+    payload = adapter.generate_outline_draft("帮我生成一份四级大纲")
+
+    state = state_store.load_or_create()
+    assert payload["blocked"] is True
+    assert payload["next_action"] == "confirm_ideation_summary"
+    assert payload["stage"] == BookStage.DISCOVERY.value
+    assert state.stage == BookStage.DISCOVERY
+    assert state.pending_confirmation == "ideation_summary"
+
+
+def test_dante_actions_confirm_summary_only_when_gate_is_pending(
+    tmp_path: Path,
+):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.append_ideation("主角是普通上班族")
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    adapter = DanteActionAdapter(orchestrator)
+
+    payload = adapter.confirm_ideation_summary("这个汇总可以")
+
+    state = state_store.load_or_create()
+    assert payload["blocked"] is True
+    assert payload["next_action"] == "ignore"
+    assert payload["stage"] == BookStage.DISCOVERY.value
+    assert state.stage == BookStage.DISCOVERY
+    assert state.pending_confirmation == ""
+
+
+def test_dante_actions_confirm_summary_advances_discovery_to_foundation(
+    tmp_path: Path,
+):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.append_ideation("主角是普通上班族")
+    planning_store.save_ideation_summary("# 当前想法汇总\n\n- 都市职场异能")
+    state = state_store.load_or_create()
+    state.stage = BookStage.DISCOVERY
+    state.pending_confirmation = "ideation_summary"
+    state.last_agent_action = "generated_ideation_summary"
+    state_store.save(state)
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    adapter = DanteActionAdapter(orchestrator)
+
+    payload = adapter.confirm_ideation_summary("这个汇总可以")
+
+    state = state_store.load_or_create()
+    assert payload["blocked"] is False
+    assert payload["next_action"] == "ready_for_outline_generation"
+    assert payload["stage"] == BookStage.FOUNDATION.value
+    assert state.stage == BookStage.FOUNDATION
+    assert state.pending_confirmation == ""
+    assert state.last_agent_action == "confirmed_ideation_summary"
+
+
+def test_dante_actions_require_outline_scope_confirmation_before_preflight(
+    tmp_path: Path,
+):
+    _, novel_root = _bootstrap_novel(tmp_path)
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    state = state_store.load_or_create()
+    state.stage = BookStage.ROLLING_OUTLINE
+    state.pending_confirmation = "outline_scope"
+    state_store.save(state)
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    adapter = DanteActionAdapter(orchestrator)
+
+    payload = adapter.run_chapter_preflight("ch_001")
+
+    assert novel_root.exists()
+    assert payload["ok"] is False
+    assert payload["reason"] == "outline_not_confirmed"
+    assert payload["missing_items"] == ["outline_scope"]
+
+
+def test_dante_actions_do_not_allow_preflight_when_outline_scope_still_pending_even_if_stage_was_mutated(
+    tmp_path: Path,
+):
+    _bootstrap_novel(tmp_path)
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    state = state_store.load_or_create()
+    state.stage = BookStage.CHAPTER_PREFLIGHT
+    state.pending_confirmation = "outline_scope"
+    state.current_chapter = "ch_001"
+    state_store.save(state)
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+    adapter = DanteActionAdapter(orchestrator)
+
+    payload = adapter.run_chapter_preflight("ch_001")
+
+    assert payload["ok"] is False
+    assert payload["reason"] == "outline_not_confirmed"
+    assert payload["missing_items"] == ["outline_scope"]
 
 
 def test_status_request_accepts_current_status_phrase(tmp_path: Path):
@@ -370,7 +533,7 @@ def test_mixed_foundation_and_outline_prefers_foundation_promotion(tmp_path: Pat
     )
     assert background_body.strip() == "背景A"
     assert foundation_body.strip() == "设定B"
-    assert not planning_store.outline_src_path.exists()
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
 def test_outline_confirmation_promotes_outline_and_advances_to_chapter_preflight(
@@ -425,7 +588,7 @@ def test_outline_confirmation_requires_outline_stage(tmp_path: Path):
     assert result.next_action == "ignore"
     assert result.stage == BookStage.REVIEW_AND_REVISE
     assert state.stage == BookStage.REVIEW_AND_REVISE
-    assert not planning_store.outline_src_path.exists()
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
 def test_ambiguous_outline_question_does_not_promote_outline(tmp_path: Path):
@@ -450,7 +613,7 @@ def test_ambiguous_outline_question_does_not_promote_outline(tmp_path: Path):
     assert result.stage == BookStage.ROLLING_OUTLINE
     assert state.stage == BookStage.ROLLING_OUTLINE
     assert state.pending_confirmation == "outline_scope"
-    assert not planning_store.outline_src_path.exists()
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
 def test_negated_outline_confirmation_does_not_promote_outline(tmp_path: Path):
@@ -476,7 +639,7 @@ def test_negated_outline_confirmation_does_not_promote_outline(tmp_path: Path):
     assert result.next_action == "ignore"
     assert state.stage == BookStage.ROLLING_OUTLINE
     assert state.pending_confirmation == "outline_scope"
-    assert not planning_store.outline_src_path.exists()
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
 def test_suffix_negated_outline_confirmation_does_not_promote_outline(tmp_path: Path):
@@ -502,7 +665,7 @@ def test_suffix_negated_outline_confirmation_does_not_promote_outline(tmp_path: 
     assert result.next_action == "ignore"
     assert state.stage == BookStage.ROLLING_OUTLINE
     assert state.pending_confirmation == "outline_scope"
-    assert not planning_store.outline_src_path.exists()
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
 def test_plain_negated_outline_confirmation_does_not_promote_outline(tmp_path: Path):
@@ -528,7 +691,7 @@ def test_plain_negated_outline_confirmation_does_not_promote_outline(tmp_path: P
     assert result.next_action == "ignore"
     assert state.stage == BookStage.ROLLING_OUTLINE
     assert state.pending_confirmation == "outline_scope"
-    assert not planning_store.outline_src_path.exists()
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
 def test_negative_agreement_outline_confirmation_does_not_promote_outline(tmp_path: Path):
@@ -554,7 +717,7 @@ def test_negative_agreement_outline_confirmation_does_not_promote_outline(tmp_pa
     assert result.next_action == "ignore"
     assert state.stage == BookStage.ROLLING_OUTLINE
     assert state.pending_confirmation == "outline_scope"
-    assert not planning_store.outline_src_path.exists()
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 大纲草案"
 
 
 def test_natural_outline_approval_promotes_outline(tmp_path: Path):
@@ -589,12 +752,17 @@ def test_outline_generation_request_writes_draft_and_requests_confirmation(
 ):
     state_store = BookStateStore(tmp_path, "demo")
     planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.append_ideation("主角是普通上班族")
+    planning_store.save_ideation_summary("# 当前想法汇总\n\n- 都市职场异能")
     orchestrator = OpenWriteOrchestrator.for_testing(
         tmp_path,
         "demo",
         state_store=state_store,
         planning_store=planning_store,
     )
+    state = state_store.load_or_create()
+    state.stage = BookStage.FOUNDATION
+    state_store.save(state)
     monkeypatch.setattr(orchestrator, "_generate_outline_draft", lambda text: "# 新大纲")
 
     result = orchestrator.handle_user_message("帮我生成一份都市异能题材四级大纲")
@@ -606,6 +774,44 @@ def test_outline_generation_request_writes_draft_and_requests_confirmation(
     assert state.stage == BookStage.ROLLING_OUTLINE
     assert state.pending_confirmation == "outline_scope"
     assert planning_store.outline_draft_path.read_text(encoding="utf-8") == "# 新大纲"
+    assert planning_store.outline_src_path.read_text(encoding="utf-8") == "# 新大纲"
+
+
+def test_outline_generation_requires_confirmed_ideation_summary_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    state_store = BookStateStore(tmp_path, "demo")
+    planning_store = StoryPlanningStore(tmp_path, "demo")
+    planning_store.append_ideation("主角是普通上班族")
+    planning_store.append_ideation("公司地下埋着异常节点")
+    orchestrator = OpenWriteOrchestrator.for_testing(
+        tmp_path,
+        "demo",
+        state_store=state_store,
+        planning_store=planning_store,
+    )
+
+    monkeypatch.setattr(
+        orchestrator,
+        "_chat_text",
+        lambda system_prompt, user_prompt, **kwargs: "# 当前想法汇总\n\n## 核心方向\n\n- 都市职场异能",
+    )
+    monkeypatch.setattr(
+        orchestrator,
+        "_generate_outline_draft",
+        lambda text: (_ for _ in ()).throw(
+            AssertionError("outline draft should not be generated before summary confirmation")
+        ),
+    )
+
+    result = orchestrator.handle_user_message("帮我生成一份都市异能题材四级大纲")
+
+    state = state_store.load_or_create()
+    assert result.blocked is True
+    assert result.next_action == "confirm_ideation_summary"
+    assert state.pending_confirmation == "ideation_summary"
+    assert planning_store.ideation_summary_path.exists()
+    assert planning_store.outline_draft_path.exists() is False
 
 
 def test_negated_foundation_confirmation_does_not_promote_foundation(tmp_path: Path):
@@ -630,8 +836,8 @@ def test_negated_foundation_confirmation_does_not_promote_foundation(tmp_path: P
     assert result.next_action == "ignore"
     assert state.stage == BookStage.DISCOVERY
     assert state.current_chapter == ""
-    assert not (planning_store.story_src_dir / "background.md").exists()
-    assert not (planning_store.story_src_dir / "foundation.md").exists()
+    assert (planning_store.story_src_dir / "background.md").read_text(encoding="utf-8")
+    assert (planning_store.story_src_dir / "foundation.md").read_text(encoding="utf-8")
 
 
 def test_writing_request_after_outline_confirmation_records_current_chapter(

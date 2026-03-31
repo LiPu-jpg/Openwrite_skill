@@ -174,6 +174,24 @@ class TestOutlineParser:
         assert "第50章：加入组织" in h.master.key_turns
         assert len(h.arcs) == 1
 
+    def test_parse_master_story_intro_body(self, parser):
+        md = """# 测试小说
+
+> 核心主题: 成长与选择
+> 世界前提: 现代都市隐藏着异常
+
+这是一个普通程序员在公司与异常世界夹缝求生的故事。
+
+他最开始只想保住工作，后来却被迫介入更大的秘密。
+
+## 第一篇：觉醒篇
+"""
+        h = parser.parse(md, "test")
+
+        assert h.master is not None
+        assert "普通程序员" in h.master.summary
+        assert "被迫介入更大的秘密" in h.master.summary
+
     def test_parse_chapter_range(self):
         result = OutlineMdParser._parse_chapter_range("ch_001 - ch_003")
         assert result == ["ch_001", "ch_002", "ch_003"]
@@ -211,6 +229,8 @@ class TestOutlineSerializer:
 > 核心主题: 测试主题
 > 基调: 轻松
 
+这是一个普通人在异常世界里慢慢成长的故事。
+
 ## 第一篇
 
 > 摘要: 第一篇摘要
@@ -234,6 +254,7 @@ class TestOutlineSerializer:
         # 核心结构应一致
         assert h2.master.title == h1.master.title
         assert h2.master.core_theme == h1.master.core_theme
+        assert h2.master.summary == h1.master.summary
         assert len(h2.arcs) == len(h1.arcs)
         assert len(h2.sections) == len(h1.sections)
         assert len(h2.chapters) == len(h1.chapters)
