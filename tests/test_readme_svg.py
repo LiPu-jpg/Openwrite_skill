@@ -10,11 +10,20 @@ def test_readme_references_external_logo_svg():
     code_blocks = [token for token in tokens if token.type == "code_block"]
     assert all("<path" not in token.content for token in code_blocks)
     assert "<svg" not in text
-    assert 'src="assets/logo.svg"' in text
+    assert "<picture>" in text
+    assert 'media="(prefers-color-scheme: dark)"' in text
+    assert 'srcset="assets/logo-dark.svg"' in text
+    assert 'media="(prefers-color-scheme: light)"' in text
+    assert 'srcset="assets/logo-light.svg"' in text
+    assert 'src="assets/logo-light.svg"' in text
 
     html_blocks = [token for token in tokens if token.type == "html_block"]
-    assert any('src="assets/logo.svg"' in token.content for token in html_blocks)
-    assert Path("assets/logo.svg").exists()
+    html = "\n".join(token.content for token in html_blocks)
+    assert "<picture>" in html
+    assert 'srcset="assets/logo-dark.svg"' in html
+    assert 'srcset="assets/logo-light.svg"' in html
+    assert Path("assets/logo-light.svg").exists()
+    assert Path("assets/logo-dark.svg").exists()
 
 
 def test_readme_documents_dante_as_primary_entry():
