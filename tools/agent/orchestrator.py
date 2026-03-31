@@ -13,6 +13,7 @@ import yaml
 from ..context_builder import ContextBuilder
 from ..frontmatter import parse_toml_front_matter
 from ..source_sync import run_sync
+from ..style_synthesizer import render_style_manifest_summary
 from ..story_planning import StoryPlanningStore
 from ..utils import parse_chapter_id
 from ..workflow_scheduler import WorkflowScheduler
@@ -163,6 +164,38 @@ class OpenWriteOrchestrator:
 
     def run_chapter_preflight(self, chapter_id: str) -> dict[str, Any]:
         return self.run_preflight(chapter_id)
+
+    def review_chapter(self, chapter_id: str, guidance: str = "") -> dict[str, Any]:
+        self.state = self.state_store.load_or_create()
+        try:
+            executor = self._get_orchestrator_executor("review_chapter")
+            result = self._normalize_review_result(
+                executor(
+                    {
+                        "chapter_id": chapter_id,
+                        "guidance": guidance,
+                    }
+                )
+            )
+            if result.get("error") or not result.get("ok", True):
+                raise RuntimeError(result.get("error", "review_failed"))
+        except Exception as exc:
+            self.state.blocking_reason = "review_failed"
+            self.state.last_agent_action = "reviewed_chapter_failed"
+            self.state_store.save(self.state)
+            return {
+                "ok": False,
+                "chapter_id": chapter_id,
+                "reason": str(exc) or exc.__class__.__name__,
+                "passed": False,
+            }
+
+        self.state.blocking_reason = ""
+        self.state.last_agent_action = "reviewed_chapter"
+        self.state_store.save(self.state)
+        normalized = dict(result)
+        normalized.setdefault("chapter_id", chapter_id)
+        return normalized
 
     def delegate_writing(
         self,
@@ -849,9 +882,12 @@ class OpenWriteOrchestrator:
             self.project_root / "data" / "novels" / self.novel_id / "data" / "style"
         )
         composed_path = runtime_style_root / "composed.md"
+        manifest_path = runtime_style_root / "manifest.toml"
         fingerprint_path = runtime_style_root / "fingerprint.yaml"
         if composed_path.exists():
             docs["work.composed"] = self._read_text(composed_path)
+        if manifest_path.exists():
+            docs["work.manifest"] = render_style_manifest_summary(self._read_text(manifest_path))
         if fingerprint_path.exists():
             docs["work.fingerprint"] = self._read_text(fingerprint_path)
 

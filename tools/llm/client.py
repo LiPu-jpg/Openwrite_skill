@@ -77,7 +77,7 @@ class LLMConfig:
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-4o-mini"
     temperature: float = 0.7
-    max_tokens: int = 8192
+    max_tokens: int = 24000
     stream: bool = True
     api_format: Literal["chat", "responses"] = "chat"
     timeout_seconds: float = 120.0
@@ -96,7 +96,7 @@ class LLMConfig:
             base_url=os.getenv("LLM_BASE_URL", "https://api.openai.com/v1"),
             model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
             temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
-            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "8192")),
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "24000")),
             stream=os.getenv("LLM_STREAM", "true").lower() == "true",
             api_format=os.getenv("LLM_API_FORMAT", "chat"),
             timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "120")),

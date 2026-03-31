@@ -1,6 +1,11 @@
 """状态验证器
 
 验证 settler 输出的真相文件一致性。
+
+这个模块做的是“启发式兜底检查”，不是强 schema 校验：
+- 输入仍然是面向人类可读的 Markdown/文本状态
+- 输出是一组 non-blocking issues，供 review/settlement 参考
+- 重点抓“正文写了但状态没跟上”或“状态写了但正文没支撑”的明显异常
 """
 
 from __future__ import annotations
@@ -59,6 +64,8 @@ class StateValidator:
         """
         issues = []
 
+        # 按“状态声明 -> 正文证据 -> 时间连续性 -> 伏笔异常 -> 回溯编辑”的顺序做轻量巡检。
+        # 这些检查彼此独立，方便后续按类别替换成更强的结构化验证。
         # 1. 检查状态变化是否有叙事支持
         issues.extend(self._check_narrative_support(current_state, content))
 
@@ -81,7 +88,7 @@ class StateValidator:
         """检查状态变化是否有叙事支持"""
         issues = []
 
-        # 提取状态中的变化声明
+        # 这里先用弱规则抽取“像状态更新的句子”，目标是发现明显缺证据的声明。
         state_changes = re.findall(r"(?:状态变化|变化|新增|获得|失去)[：:]\s*(.+)", state)
         for change in state_changes:
             # 检查变化是否在正文中有描述
@@ -101,8 +108,8 @@ class StateValidator:
         """检查叙事变化是否被状态文件捕获"""
         issues = []
 
-        # 提取正文中的关键变化
-        # 位置变化
+        # 当前版本先抓最容易漏记的变化：角色位置变化。
+        # 后续如果 state 文件进一步结构化，可以把这块替换成字段级比对。
         location_patterns = [
             r"来到(.+?)[\n，。]",
             r"前往(.+?)[\n，。]",
@@ -131,7 +138,7 @@ class StateValidator:
         """检查时间悖论"""
         issues = []
 
-        # 提取当前和之前状态中的时间/位置
+        # 这里目前只做“当前位置是否跳变”的轻检查，避免把无过渡移动直接当成 hard failure。
         current_location = self._extract_location(current_state)
         previous_location = self._extract_location(previous_state)
 
@@ -148,7 +155,7 @@ class StateValidator:
         """检查伏笔异常"""
         issues = []
 
-        # 提取状态中的伏笔
+        # 仍然是启发式：抓“状态里声明了伏笔，但正文里似乎触碰了它”的情况。
         hook_pattern = r"伏笔[：:]\s*(.+?)[。\n]"
         hooks = re.findall(hook_pattern, state)
 
@@ -175,7 +182,7 @@ class StateValidator:
         """检查回溯编辑"""
         issues = []
 
-        # 检查状态中是否暗示变化发生在前章
+        # 这类短语常见于 settler 事后补写，先作为 warning 提醒人工复核。
         retroactive_phrases = [
             r"原来已经",
             r"早就已经",
@@ -195,7 +202,10 @@ class StateValidator:
         return issues
 
     def _extract_location(self, state: str) -> str:
-        """从状态中提取位置"""
+        """从状态中提取位置。
+
+        这里只抽第一条命中的位置声明，用于跨章连续性的粗粒度检查。
+        """
         location_patterns = [
             r"位置[：:]\s*(.+?)[\n|]",
             r"位于[：:]\s*(.+?)[\n|]",

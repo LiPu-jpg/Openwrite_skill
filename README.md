@@ -1,127 +1,220 @@
-# OpenWrite
+<p align="center">
+  <img src="assets/logo-light.svg#gh-light-mode-only" width="360" alt="OpenWrite">
+  <img src="assets/logo-dark.svg#gh-dark-mode-only" width="360" alt="OpenWrite">
+</p>
 
-<img src="assets/logo.svg" width="420" alt="OpenWrite" />
+<h1 align="center">Autonomous Novel Writing CLI AI Agent<br><sub>自动化长篇小说写作 CLI AI Agent</sub></h1>
 
-OpenWrite 是一个面向长篇小说创作的 AI 工作台。它不是“给模型塞一段 prompt 然后生成一章”，而是把立项、设定、滚动大纲、章节写作、审查、真相文件和 workflow 放进同一条长期生产线里，让你能真的把一本书持续写下去。
+<p align="center">
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/version-5.4.0-2563eb" alt="Version"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-%3E%3D3.10-22c55e" alt="Python >= 3.10"></a>
+  <img src="https://img.shields.io/badge/entry-openwrite%20dante-0f172a" alt="Primary Entry: openwrite dante">
+  <img src="https://img.shields.io/badge/structure-src%20%2B%20data-1d4ed8" alt="Structure: src + data">
+</p>
 
-## 它和普通 AI 写作工具的区别
+<p align="center">
+  长篇小说不是一次性 prompt。OpenWrite 把立项、设定、滚动大纲、章节写作、审查、真相文件和 workflow 放进同一条长期生产线里，让你和 Dante 持续把一本书写下去。
+</p>
 
-- 它按“整本书”工作，不按“单次生成”工作。
-- `src/` 是人和 AI 共用的确认版真源，`data/` 是运行态，不再维持两套彼此漂移的文档。
-- 写章前会先组 canonical packet，不是裸 prompt。
-- `openwrite dante` 是长期会话主入口，会先收集想法、汇总 idea、确认基础设定和可写大纲，再进入章节写作。
-- `write`、`multi-write`、`review`、`dante` 现在都会推进同一套 `book_state.yaml` 和 `wf_ch_*.yaml`。
+## 推荐用法
 
-## 3 分钟开始
+OpenWrite 推荐你把它当成一个长期协作的主 agent，而不是一组需要手工维护的文件夹。
+
+- 对大多数用户来说，日常只需要记住两个入口：`openwrite goethe` 和 `openwrite dante`
+- 先用 `openwrite goethe` 把脑洞整理成可写资产
+- 日常推进时优先用 `openwrite dante`
+- 只在需要精确检查或脚本化时才直接用 `write`、`review`、`context`、`assemble`
+- 不要手工维护 `data/` 里的缓存和 workflow 文件
+- 只有确认版内容才建议手改 `src/`
+
+职责拆分：
+
+- Goethe 负责长会话规划：汇总灵感、提建议、修人物、修设定、修大纲，并在资产成熟时显式交接给 Dante
+- Dante 负责把可写资产持续写成正文，并在正文推进过程中必要时回修资产
+
+一句话说清楚：
+
+- `src/` 是人和 AI 共读的确认版真源
+- `data/` 是运行态、workflow、手稿、缓存和快照
+- `dante` 才是你最应该频繁使用的入口
+
+### 只记住这两个入口
+
+如果你不想记一堆命令，先只记住：
+
+- `openwrite goethe`
+  负责把你的脑洞整理成可写资产：灵感、人物、设定、大纲、风格来源
+- `openwrite dante`
+  负责把这些资产持续写成正文：写章、审查、推进运行态
+
+其他 CLI 命令都可以理解成高级控制面：
+
+- 当你要调试、脚本化、强制执行某一步时再用
+- 平时不需要围着 `data/` 或单个工具命令工作
+
+## 快速开始
+
+### 1. 安装
 
 ```bash
-git clone <repo_url>
-cd Openwrite
+git clone https://github.com/LiPu-jpg/Openwrite_skill.git
+cd Openwrite_skill
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+```
 
+### 2. 配置模型
+
+```bash
 export LLM_API_KEY=your-key
-export LLM_MODEL=gpt-4o-mini
-# 如果你走兼容端点，也可以额外设置：
-# export LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions
+export LLM_MODEL=glm-5
 
+# 如果你走兼容 OpenAI 的端点，也可以设置：
+# export LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions
+```
+
+### 3. 新书先开 Goethe
+
+```bash
 openwrite goethe
 ```
 
-如果项目已经存在，直接在项目根目录执行：
+进入 Goethe 之后，先把这几类信息聊清楚：
 
-```bash
-source .venv/bin/activate
-openwrite status
-```
+- 题材、基调和核心卖点
+- 主角、主要矛盾、想避免的套路
+- 基础设定、人物草案、当前可写范围大纲
+- 你自己的样文、设定素材或同人来源文本
 
-## 你会怎么用它写一本书
-
-OpenWrite 推荐的链路不是“上来就写章”，而是：
-
-1. 立项聊天  
-   用 `goethe` 建项目，或直接启动 `dante` 聊你的想法。
-2. 汇总 idea  
-   `dante` 会把当前灵感整理成可确认的汇总，而不是把零散聊天直接硬塞进大纲。
-3. 确认基础设定  
-   背景、主角、规则、核心冲突稳定下来后，再进入大纲阶段。
-4. 生成或修改可写范围大纲  
-   大纲是硬门槛，没有当前可写范围的大纲，就不进入写章。
-5. 写章与审查  
-   `write`、`multi-write` 和 `review` 都基于同一套 canonical packet。
-6. 回写运行态  
-   `current_state.md`、`ledger.md`、`relationships.md`、`book_state.yaml`、`wf_ch_*.yaml` 会同步推进。
-
-一个典型会话会像这样：
+### 4. 资产够写了，再切 Dante
 
 ```bash
 openwrite dante
-# 然后在 Dante 会话里持续聊天：
-# 我想写一本都市职场异能小说
-# 主角是普通上班族，晚上能看到异常术式
-# 先帮我汇总一下当前想法
-# 这个汇总可以
-# 帮我生成一份四级大纲
-# 大纲范围确认，可以开始写
-# 写第六章，3500字，冲突更直接
-openwrite review ch_006
 ```
 
-## 最重要的心智模型
+如果项目已经存在，而且你已经有可写资产，通常不需要重新开 Goethe，直接：
 
-### 1. `src/` 是唯一真源
+```bash
+source .venv/bin/activate
+openwrite dante
+```
 
-这里放确认版、长期维护的内容：
+## 最推荐的工作流
 
-- `src/outline.md`
-- `src/story/background.md`
-- `src/story/foundation.md`
-- `src/characters/*.md`
-- `src/world/rules.md`
-- `src/world/terminology.md`
-- `src/world/timeline.md`
-- `src/world/entities/*.md`
+### 1. 先用 Goethe 把灵感整理成可写资产
 
-这些文件推荐使用“`TOML front matter + Markdown 正文`”：
+Goethe 不是一次性建书器，而是长期 planning 会话。先在 Goethe 里把 idea 讲清楚：
 
-- front matter 放索引字段：`id`、`summary`、`tags`、`detail_refs`、`related`
-- 正文放给人和 AI 共同阅读的详细设定
+- 题材和基调
+- 主角与核心冲突
+- 想避免的套路
+- 你自己的样文、同人来源或设定素材
+- 当前最想推进到哪
 
-### 2. `data/` 是运行态，不是第二份真相
+推荐会话像这样：
 
-这里放工作流、运行时状态、手稿和派生缓存：
+```text
+$ openwrite goethe
 
-- `data/manuscript/`：正文
-- `data/world/`：`current_state.md`、`ledger.md`、`relationships.md`
-- `data/workflows/`：`book_state.yaml`、`wf_ch_*.yaml`
-- `data/foreshadowing/`：伏笔图和日志
-- `data/style/`：合成风格和指纹
-- `data/test_outputs/`：上下文包快照
-- `data/characters/cards/*.yaml`、`data/hierarchy.yaml`：从 `src/` 派生出的缓存
+我想写一本都市职场异能小说。
+主角是普通上班族，晚上能看到异常术式。
+先帮我汇总一下当前想法。
+这个汇总可以，再整理成基础设定和人物草案。
+把大纲推进到能写第六章的范围。
+```
 
-`data/planning/` 里有两类东西：
+### 2. 再让 Dante 推进正文
 
-- 真正的运行态规划记录：`ideation.md`、`ideation_summary.md`
-- 给 workflow 可见性的镜像文件：`background_draft.md`、`foundation_draft.md`、`outline_draft.md`
+当人物、设定和当前可写范围大纲已经成型后，再进入 Dante：
 
-其中确认版真源仍然是 `src/`，不是 `planning/*.md`。
+```text
+$ openwrite dante
 
-### 3. 写章靠的是 canonical packet
+写第六章，3500 字，冲突更直接。
+写完后先自审，再告诉我有没有设定冲突。
+```
 
-写作前，系统会把这些信息拼成一个统一的上下文包：
+### 3. 让 Goethe 先做汇总，再做大纲；让 Goethe 显式 handoff 给 Dante
+
+最稳的顺序是：
+
+1. 聊 idea
+2. 让 Goethe 汇总 idea
+3. 确认基础设定
+4. 生成或修改可写范围大纲
+5. Goethe 在资产满足条件后显式 handoff 给 Dante
+6. 再交给 Dante 写章和审查
+
+不推荐直接说“给我写一章”，尤其是在设定和大纲还没稳定的时候。
+
+### 4. 只有少数场景才建议直达命令
+
+| 你要做什么 | 推荐命令 | 说明 |
+|---|---|---|
+| 从零开始建项目或持续规划资产 | `openwrite goethe` | 长期 planning 入口 |
+| 长期讨论、推进整本书 | `openwrite dante` | 主入口 |
+| 强制写指定章节 | `openwrite write ch_006` | 直达写作 |
+| 用子流程写章 | `openwrite multi-write ch_006` | director/writer/reviewer 子流程 |
+| 单独审查已写章节 | `openwrite review ch_006` | 不进聊天 |
+| 查看组装上下文 | `openwrite context ch_006 --show` | 查 Dante 到底看了什么 |
+| 导出 canonical packet | `openwrite assemble ch_006 --output-dir out` | 调试写作输入 |
+| 查看当前运行态 | `openwrite status` | 看进度和阶段 |
+
+你完全可以把这张表当“高级操作列表”：
+
+- 日常创作：优先 `goethe` / `dante`
+- 精确控制、调试或自动化脚本：再用这些直达命令
+
+## Dante 会帮你做什么
+
+`openwrite dante` 是长期会话 ReAct 主 agent。它会在会话里自己决定什么时候：
+
+- 基于现有人物、设定和大纲推进正文
+- 做章节 preflight
+- 调 `write` 或 `multi-write`
+- 调 `review`
+- 必要时提出并回修人物、设定或大纲
+- 推进 `book_state.yaml` 和 `wf_ch_*.yaml`
+
+它不是一次一问一答的 prompt 包装，而是一个以正文推进为中心的持续工作主编排入口。
+
+### Dante 的上下文来源
+
+写章前，系统会组 canonical packet，而不是只拼一段 prompt。典型会包含：
 
 - 当前可写范围大纲
 - 故事背景和基础设定
 - 相关角色文档
 - 相关概念与世界规则
 - 上一章正文
-- 当前运行态真相文件
-- 作品风格、craft 规则、参考风格摘要
+- `current_state.md`、`ledger.md`、`relationships.md`
+- 风格合成结果和 craft 规则
 
-所以 OpenWrite 的核心不是“一个 prompt”，而是“持续维护一份可拼接的小说状态”。
+Dante 也会接收 Goethe 交接过来的 handoff 摘要和当前可写窗口，不需要你从头重新解释前情。
 
-## 目录结构
+所以更好的提问方式是给目标和约束，而不是直接指挥它去改某个缓存文件。
+
+## 什么时候才手工改文件
+
+绝大多数情况下，你不需要手工维护运行态文件。
+
+推荐：
+
+- 和 Dante 聊，确认后让它推进
+- 需要人工修正时，只改 `src/` 下的确认版真源
+- 改完 `src/` 后，用 `openwrite sync` 刷新派生缓存
+
+不推荐：
+
+- 手改 `data/hierarchy.yaml`
+- 手改 `data/characters/cards/*.yaml`
+- 手改 `data/workflows/wf_ch_*.yaml`
+- 把 `background_draft.md`、`foundation_draft.md`、`outline_draft.md` 当另一套真相长期维护
+
+如果你在问“该不该改这个 `data/` 文件”，大多数情况下答案都是“不该”。
+
+## 目录心智
 
 ```text
 data/novels/{novel_id}/
@@ -151,7 +244,13 @@ data/novels/{novel_id}/
     ├── foreshadowing/dag.yaml
     ├── style/
     │   ├── composed.md
-    │   └── fingerprint.yaml
+    │   ├── fingerprint.yaml
+    │   └── manifest.toml
+    ├── sources/{source_id}/
+    │   ├── source.md
+    │   ├── setting_profile.md
+    │   ├── style/*.md
+    │   └── extraction/
     ├── workflows/
     │   ├── book_state.yaml
     │   └── wf_ch_*.yaml
@@ -160,107 +259,120 @@ data/novels/{novel_id}/
     └── test_outputs/
 ```
 
+其中：
+
+- `src/outline.md` 是唯一大纲真源
+- `data/hierarchy.yaml` 是派生缓存
+- `data/planning/ideation.md` 和 `data/planning/ideation_summary.md` 是会话与规划运行态
+- `data/world/*.md` 和 `data/workflows/*.yaml` 是运行时状态
+
+### 风格文件说人话
+
+如果你把一篇参考文章交给系统，风格这条链会产出 3 层东西：
+
+- `data/sources/{source_id}/`
+  这是“拆书笔记”。AI 会把你提供的文章拆成来源说明、设定提要、叙述声音、语言习惯、节奏、对话等文档。
+- `data/style/manifest.toml`
+  这是“整理后的风格清单”。系统会把拆书笔记归一成：哪些能学、哪些不能照搬、哪些是作品约束、哪些是对话/叙述/节奏规则。
+- `data/style/composed.md`
+  这是“最终给这本书用的风格说明书”。Writer 真正主要参考的是它，而不是直接照着来源文章写。
+
+一句话记忆：
+
+- `sources/{source_id}` = 参考文章的拆解笔记
+- `manifest.toml` = 拆解笔记整理后的可用风格清单
+- `composed.md` = 给你这本书使用的最终风格说明书
+
 ## 常用命令
 
-### 建项目和检查环境
+### 主入口
 
-| 命令 | 用途 |
-|---|---|
-| `openwrite goethe` | 交互式创建项目，适合从零开始 |
-| `openwrite init <novel_id>` | 直接初始化目录 |
-| `openwrite status` | 查看当前运行态 |
-| `openwrite doctor` | 自检环境和路径 |
+- `openwrite dante`
+- `openwrite goethe`
 
-### 主编排
+### 写作与审查
 
-| 命令 | 用途 |
-|---|---|
-| `openwrite dante` | 启动长期会话主 agent |
-| 在 Dante 会话里说“先帮我汇总一下当前想法” | 整理 ideation summary |
-| 在 Dante 会话里说“帮我生成一份四级大纲” | 生成或修改当前可写大纲 |
-| 在 Dante 会话里说“写第六章，字数 3500” | 记录写作请求并进入 preflight / delegation |
+- `openwrite write next`
+- `openwrite write ch_006`
+- `openwrite multi-write ch_006`
+- `openwrite review`
+- `openwrite review ch_006`
 
-### 写作、审查、上下文
+### 诊断与上下文
 
-| 命令 | 用途 |
-|---|---|
-| `openwrite write next` | direct CLI 写下一章 |
-| `openwrite write ch_005` | 写指定章节 |
-| `openwrite multi-write ch_005` | 用 director/writer/reviewer 子流程写章 |
-| `openwrite review` | 审查最新章节 |
-| `openwrite review ch_005` | 审查指定章节 |
-| `openwrite context ch_005 --show` | 查看章节上下文 |
-| `openwrite assemble ch_005 --output-dir <dir>` | 导出 canonical packet 快照 |
+- `openwrite status`
+- `openwrite doctor`
+- `openwrite context ch_006 --show`
+- `openwrite assemble ch_006 --output-dir out`
+- `openwrite sync --check`
+- `openwrite sync`
 
-### 同步与风格
+### 风格与题材
 
-| 命令 | 用途 |
-|---|---|
-| `openwrite sync --check` | 检查 `src -> data` 是否有待同步项 |
-| `openwrite sync` | 执行同步 |
-| `openwrite style extract <name> --source <file>` | 提取参考风格 |
-| `openwrite style synthesize` | 重建 `data/style/composed.md` |
-| `openwrite radar` | 做题材/平台趋势分析 |
+- `openwrite style extract office_excerpt --source text.txt`
+- `openwrite setting extract office_excerpt --source text.txt`
+- `openwrite source review office_excerpt`
+- `openwrite source promote office_excerpt --target all`
+- `openwrite style synthesize`
+- `openwrite radar`
+
+其中 `source promote --target all` 会同时：
+- 切换 `style_id`
+- 更新 `foundation.md`
+- 把规则、时间线和阵营拆进 `src/world/*.md`
+
+旧的 `openwrite agent` 已退役，请改用 `openwrite dante`。
 
 ## Agent 分工
 
-- `openwrite dante`  
-  主编排入口。长期会话式 ReAct 主 agent，负责立项聊天、idea 汇总、基础设定门禁、大纲门禁、章节 preflight、调度写作与审查。
-
-- `openwrite write`  
-  direct CLI 写作入口。适合明确知道要写哪一章时使用，但它现在也会走 canonical packet、workflow 和 book state。
-
-- `openwrite multi-write`  
-  受限子流程。内部由 director 编排 writer / reviewer，更像 `openwrite dante` 可调用的 subagent。
-
-- `openwrite review`  
-  独立审查入口。和 `multi-write` reviewer 共享同一类 packet 语义，不再是裸正文审查。
-
-- `openwrite goethe`  
-  项目创建引导。适合从零开始立项，不是长期写作主编排。
-
-- `openwrite agent`  
-  已退役的旧入口。请改用 `openwrite dante`。
-
-## 推荐工作方式
-
-### 如果你主要手工维护设定
-
-1. 改 `src/` 里的真源文档
-2. 跑 `openwrite sync`
-3. 用 `context` 或 `assemble` 看 packet
-4. 再 `write` / `multi-write` / `review`
-
-### 如果你主要让 agent 推进
-
-1. 用 `openwrite dante` 启动长期会话，先聊 idea
-2. 先确认 idea summary
-3. 再确认基础设定和可写大纲
-4. 然后让 Dante 写章和审查
-
-### 不建议的做法
-
-- 直接手改 `data/hierarchy.yaml`
-- 把 `data/characters/cards/*.yaml` 当真源维护
-- 没确认当前可写范围大纲就直接连写多章
+- `Dante`
+  正文创作主 ReAct agent。默认负责基于人物、设定和大纲推进章节正文、预检、审查和状态结算；必要时为正文推进回修资产。
+- `Goethe`
+  长会话规划 agent。更适合从零开始汇总灵感、提建议、写背景、写人物、写设定和写大纲，并在资产成熟后显式 handoff 给 Dante。
+- `write`
+  direct CLI 写作入口。适合明确知道要写哪一章时使用。
+- `multi-write`
+  Dante 可调度的写作子流程。内部会编排 director、writer、reviewer。
+- `review`
+  独立审查入口。适合对现有章稿做单独质量检查。
 
 ## 标准样例
 
-标准样例项目在 [`data/novels/test_novel/`](data/novels/test_novel)。它包含：
+标准样例项目在 [`data/novels/test_novel/`](data/novels/test_novel)。
 
-- 确认版 `src/` 真源
-- `ideation.md` 和 `ideation_summary.md`
-- 长篇骨架与当前可写窗口
-- 运行态真相文件
-- 已写章节手稿
-- canonical workflow 文件
+如果你想最快看懂这套结构，建议顺序是：
 
-如果你想最快看懂这套结构，先读：
+1. [`src/outline.md`](data/novels/test_novel/src/outline.md)
+2. [`src/story/background.md`](data/novels/test_novel/src/story/background.md)
+3. [`data/planning/ideation.md`](data/novels/test_novel/data/planning/ideation.md)
+4. [`data/planning/ideation_summary.md`](data/novels/test_novel/data/planning/ideation_summary.md)
+5. [`data/world/current_state.md`](data/novels/test_novel/data/world/current_state.md)
+6. [`data/workflows/book_state.yaml`](data/novels/test_novel/data/workflows/book_state.yaml)
 
-- [`src/outline.md`](data/novels/test_novel/src/outline.md)
-- [`data/planning/ideation.md`](data/novels/test_novel/data/planning/ideation.md)
-- [`data/planning/ideation_summary.md`](data/novels/test_novel/data/planning/ideation_summary.md)
-- [`data/workflows/book_state.yaml`](data/novels/test_novel/data/workflows/book_state.yaml)
+## 常见问题
+
+### 我应该先用 Goethe 还是 Dante
+
+新书第一次启动，先 `openwrite goethe`。  
+一旦书建立好了，日常推进基本都用 `openwrite dante`。
+
+### 我改了 `src/`，为什么写作结果没变
+
+先执行：
+
+```bash
+openwrite sync
+```
+
+### `outline_draft.md` 是不是另一份大纲真相
+
+不是。`src/outline.md` 才是唯一真源。  
+`outline_draft.md` 是给运行态和 workflow 可见性的镜像。
+
+### 为什么 Dante 有时候会先让我确认，而不是直接写
+
+因为大纲、基础设定和 idea summary 都是门禁。  
+这不是磨叽，是为了避免长篇写作在后面 20 章、50 章后开始漂。
 
 ## 环境变量
 
@@ -271,39 +383,9 @@ data/novels/{novel_id}/
 | `LLM_MODEL` | 模型名 | `gpt-4o-mini` |
 | `LLM_BASE_URL` | 自定义兼容网关 | `https://api.openai.com/v1` |
 | `LLM_TEMPERATURE` | 默认温度 | `0.7` |
-| `LLM_MAX_TOKENS` | 最大输出 token | `8192` |
+| `LLM_MAX_TOKENS` | 最大输出 token | `24000` |
 | `LLM_TIMEOUT_SECONDS` | 请求超时秒数 | SDK 默认 |
 | `LLM_MAX_RETRIES` | 重试次数 | SDK 默认 |
-
-## 常见问题
-
-### 我改了 `src/`，为什么写作没生效
-
-先同步：
-
-```bash
-openwrite sync
-```
-
-### 大纲到底看哪一份
-
-看 `src/outline.md`。  
-`data/hierarchy.yaml` 是缓存，不是给人手工维护的第二份大纲。
-
-### `background_draft.md` / `foundation_draft.md` / `outline_draft.md` 是不是另一套真相
-
-不是。它们是 runtime mirror，方便 workflow 和 agent 看到当前草案状态。确认版真源仍然在 `src/`。
-
-### 真相文件在哪
-
-```text
-data/novels/{novel_id}/data/world/
-```
-
-### 先聊天还是先写大纲
-
-先聊天，先汇总 idea，先确认基础设定，再改大纲。  
-OpenWrite 现在支持这条闭环，不建议跳过。
 
 ## 版本
 

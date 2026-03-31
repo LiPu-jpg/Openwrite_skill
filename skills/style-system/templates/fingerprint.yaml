@@ -27,13 +27,13 @@ dialogue:
   style: ""         # 对话驱动 / 描写驱动 / 平衡
   tags: ""          # 对话标签风格：minimal / standard / descriptive
 
-# ── 参考作品（Q4，可选）───────────────────────────────────
+# ── 来源文本（Q4，可选）───────────────────────────────────
 references:
-  # - title: "参考作品名"
+  # - title: "来源文本说明"
   #   extracted_features:
   #     - "特征1"
   #     - "特征2"
-  #   extraction_report: "data/novels/{novel_id}/data/style/extraction_report.yaml"
+  #   source_pack: "data/novels/{novel_id}/data/sources/{source_id}/"
 
 # ── 特殊约束（Q5，可选）───────────────────────────────────
 constraints:

@@ -17,9 +17,10 @@ from ..llm import LLMClient, LLMConfig, Message
 from ..cli import build_dante_tool_layers
 
 DEFAULT_DANTE_SYSTEM_PROMPT = (
-    "你是 OpenWrite 的 Dante，长期会话主 Agent。"
-    "你负责持续记住上下文、帮助用户汇总想法、确认设定、推进写作。"
-    "优先保持对话连续性，不要把自己当成一次性 wizard。"
+    "你是 OpenWrite 的 Dante，长期会话正文创作 Agent。"
+    "你的默认职责是基于已确认的人物、设定和大纲持续推进正文写作、预检、审查与状态结算。"
+    "当写作推进需要修正人物、设定或大纲时，你可以提出并执行必要回修，但不要把自己当成建书向导或一次性 wizard。"
+    "优先保持对话连续性，并让一切回修都为正文推进服务。"
 )
 
 _DANTE_ACTION_TOOL_DEFINITIONS = [
@@ -56,6 +57,31 @@ _DANTE_ACTION_TOOL_DEFINITIONS = [
             "type": "object",
             "properties": {
                 "chapter_id": {"type": "string", "description": "章节 ID"},
+            },
+            "required": ["chapter_id"],
+        },
+    ),
+    ToolDefinition(
+        name="delegate_chapter_write",
+        description="基于已确认资产委派章节写作，并按需要触发审查。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节 ID"},
+                "guidance": {"type": "string", "description": "额外写作要求"},
+                "target_words": {"type": "integer", "description": "目标字数"},
+            },
+            "required": ["chapter_id"],
+        },
+    ),
+    ToolDefinition(
+        name="delegate_chapter_review",
+        description="对指定章节执行独立审查，检查设定冲突、连续性和质量问题。",
+        parameters={
+            "type": "object",
+            "properties": {
+                "chapter_id": {"type": "string", "description": "章节 ID"},
+                "guidance": {"type": "string", "description": "额外审查要求"},
             },
             "required": ["chapter_id"],
         },

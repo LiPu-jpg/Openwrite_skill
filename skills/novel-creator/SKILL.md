@@ -64,7 +64,7 @@ digraph creation_flow {
 │   └── 已埋下: 可以呼应
 ├── 三层风格
 │   ├── craft/ 通用技法（dialogue_craft + scene_craft + rhythm_craft + humanization）
-│   ├── data/reference_styles/{参考作品}/ 风格指纹
+│   ├── data/novels/{id}/data/sources/{source_id}/style/ 提取风格源
 │   └── data/novels/{id}/src/characters/ + src/world/ 设定约束
 ├── 世界观规则
 │   └── 相关实体和关系
@@ -191,7 +191,7 @@ data/manuscript/
 |------|------|
 | 读取大纲 | `data/novels/{novel_id}/src/outline.md` + `data/novels/{novel_id}/data/hierarchy.yaml` |
 | 读取角色 | `data/novels/{novel_id}/src/characters/` + `data/novels/{novel_id}/data/characters/cards/` |
-| 读取风格 | `data/reference_styles/{参考作品}/` + `data/novels/{novel_id}/data/style/composed.md` |
+| 读取风格 | `data/novels/{novel_id}/data/sources/{source_id}/style/` + `data/novels/{novel_id}/data/style/composed.md` |
 | 读取世界观 | `data/novels/{novel_id}/src/world/` + `data/novels/{novel_id}/data/world/` |
 | 写入草稿 | `data/novels/{novel_id}/data/manuscript/` |
 

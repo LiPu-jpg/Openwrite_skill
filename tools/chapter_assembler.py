@@ -27,6 +27,7 @@ from tools.outline_cache import deserialize_outline_hierarchy
 from tools.outline_parser import OutlineMdParser
 from tools.shared_documents import render_indexed_document, resolve_shared_document_path
 from tools.source_sync import ensure_runtime_fresh
+from tools.style_synthesizer import render_style_manifest_summary
 from tools.story_planning import StoryPlanningStore
 from tools.truth_manager import TruthFilesManager
 
@@ -498,6 +499,10 @@ class ChapterAssemblerV2:
         if composed.exists():
             docs["work.composed"] = self._load_text(composed)
 
+        manifest = self.runtime_root / "style" / "manifest.toml"
+        if manifest.exists():
+            docs["work.manifest"] = render_style_manifest_summary(self._load_text(manifest))
+
         fingerprint = self.runtime_root / "style" / "fingerprint.yaml"
         if fingerprint.exists():
             docs["work.fingerprint"] = self._load_text(fingerprint)
@@ -509,11 +514,11 @@ class ChapterAssemblerV2:
                     docs[f"craft.{p.stem}"] = self._load_text(p)
 
         style_name = self.style_id or self.novel_id
-        ref_dir = self.project_root / "data" / "reference_styles" / style_name
-        if ref_dir.exists():
-            for p in sorted(ref_dir.glob("*")):
+        source_dir = self.runtime_root / "sources" / style_name / "style"
+        if source_dir.exists():
+            for p in sorted(source_dir.glob("*")):
                 if p.suffix in {".md", ".yaml", ".yml"}:
-                    docs[f"reference.{p.stem}"] = self._load_text(p)
+                    docs[f"source.{p.stem}"] = self._load_text(p)
 
         return docs
 

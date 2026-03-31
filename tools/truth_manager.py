@@ -12,6 +12,11 @@
 - 支线进度 → outline hierarchy
 
 支持状态快照和回滚。
+
+这里维护的是“运行态真相文件”，不是故事设定真源：
+- `src/` 里的背景、角色、世界文档偏长期资产
+- `data/world/*.md` 里的 truth files 偏当前章节推进后的状态投影
+写作、审查、workflow 读取的都是这一层运行态。
 """
 
 from __future__ import annotations
@@ -30,7 +35,10 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class TruthFiles:
-    """真相文件集合（精简版）"""
+    """真相文件集合（精简版）。
+
+    同时兼容当前 canonical 名称和历史别名，避免旧调用点在迁移期间全部失效。
+    """
 
     current_state: str = ""
     ledger: str = ""
@@ -125,9 +133,13 @@ class TruthFilesManager:
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
 
     def load_truth_files(self) -> TruthFiles:
-        """加载所有真相文件"""
+        """加载所有真相文件。
+
+        读取时会优先解析 front matter，把“索引字段 + 正文说明”拆回运行态对象。
+        """
         truth = TruthFiles()
 
+        # 三个 truth file 是固定集合；缺失时补默认 metadata，而不是直接报错中断写作链。
         for attr_name in ["current_state", "ledger", "relationships"]:
             file_path = self._get_file_path(attr_name)
             if file_path.exists():
@@ -145,9 +157,13 @@ class TruthFilesManager:
         return truth
 
     def save_truth_files(self, truth: TruthFiles):
-        """保存所有真相文件"""
+        """保存所有真相文件。
+
+        保存时统一写成 `TOML front matter + Markdown body`，保证人和 agent 读的是同一份文档。
+        """
         self.ensure_dirs()
 
+        # metadata 缺失时自动补默认索引，避免调用方只传正文时写出“纯裸文本”文件。
         for attr_name in ["current_state", "ledger", "relationships"]:
             content = getattr(truth, attr_name, "")
             file_path = self._get_file_path(attr_name)
@@ -159,7 +175,10 @@ class TruthFilesManager:
                 logger.warning(f"Failed to save {attr_name}: {e}")
 
     def update_truth_files(self, truth: TruthFiles, updates: Dict[str, str]):
-        """更新指定的真相文件"""
+        """更新指定的真相文件。
+
+        这里只做字段替换和统一保存，不负责推导状态差异。
+        """
         for key, value in updates.items():
             if hasattr(truth, key):
                 setattr(truth, key, value)
@@ -176,6 +195,7 @@ class TruthFilesManager:
 
         self.ensure_dirs()
 
+        # snapshot 记录的是一个时刻的完整运行态，用于 rewrite/rollback，而不是长期审阅文档。
         truth = self.load_truth_files()
         snapshot_id = f"snapshot_{chapter_number}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
@@ -190,6 +210,7 @@ class TruthFilesManager:
             },
         }
 
+        # 快照故意落成 JSON，避免再引入一套 front matter/Markdown 解析成本。
         snapshot_path = self.snapshots_dir / f"{snapshot_id}.json"
         snapshot_path.write_text(
             json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -211,6 +232,7 @@ class TruthFilesManager:
             with snapshot_path.open("r", encoding="utf-8") as f:
                 snapshot = json.load(f)
 
+            # 回滚时同时兼容旧快照里的历史字段名，避免已存在的 snapshot 因命名迁移失效。
             truth = TruthFiles(
                 current_state=snapshot["files"].get("current_state", ""),
                 ledger=snapshot["files"].get("ledger", snapshot["files"].get("particle_ledger", "")),
@@ -227,7 +249,10 @@ class TruthFilesManager:
             return False
 
     def list_snapshots(self) -> List[Dict[str, Any]]:
-        """列出所有快照"""
+        """列出所有快照。
+
+        这里只返回用于选择和展示的轻量元信息，不把整份 snapshot 内容全部读回内存。
+        """
         import json
 
         snapshots = []
@@ -267,8 +292,7 @@ class TruthFilesManager:
         filtered = []
 
         for line in lines:
-            # 简单启发式：如果伏笔描述中提到 POV 角色或角色已知事件，则保留
-            # 实际应用中应该用 LLM 分析
+            # 这里还是启发式过滤：宁可少裁剪，也不要把 POV 明显知道的伏笔误删掉。
             if pov_character in line:
                 filtered.append(line)
                 continue
@@ -280,6 +304,7 @@ class TruthFilesManager:
         return "\n".join(filtered) if filtered else hooks
 
     def _default_metadata(self, attr_name: str, content: str) -> Dict[str, Any]:
+        """为 truth file 补齐最小 front matter 索引。"""
         detail_map = {
             "current_state": ["scene", "actors", "open_threads"],
             "ledger": ["resources", "constraints", "balances"],
@@ -293,6 +318,7 @@ class TruthFilesManager:
         }
 
     def _summarize_truth_content(self, content: str) -> str:
+        """从正文里抽一条可读摘要，给 agent 和 CLI 做轻量索引。"""
         for line in content.splitlines():
             stripped = line.strip()
             if not stripped:
@@ -323,8 +349,8 @@ class TruthFilesManager:
         """从章节内容中提取事实（用于更新真相文件）"""
         facts: Dict[str, str] = {}
 
-        # 这里应该调用 LLM 来提取
-        # 简化版本使用正则提取
+        # 这是一个低保真 fallback：没有结构化 extractor 时，先靠正则抓最明显的事实。
+        # 它更适合兜底和测试，不是最终的事实抽取策略。
 
         # 提取物品获得/失去
         items_gained = re.findall(r"获得了?(.+?)[。，！]", content)

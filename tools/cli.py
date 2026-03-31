@@ -25,7 +25,14 @@ import re
 import yaml
 
 from tools.context_schema import normalize_context_payload, normalize_truth_file_key
-from tools.shared_documents import normalize_character_document
+from tools.shared_documents import (
+    normalize_character_document,
+    normalize_world_entity_document,
+    render_indexed_document,
+)
+from tools.frontmatter import compose_toml_document, parse_toml_front_matter, strip_front_matter_padding
+from tools.style_synthesizer import render_style_manifest_summary
+from tools.utils import generate_id
 from tools.source_sync import (
     collect_sync_status as _shared_collect_sync_status,
     run_sync as _shared_run_sync,
@@ -64,6 +71,8 @@ def main():
     _add_context_command(subparsers)
     _add_assemble_command(subparsers)
     _add_style_command(subparsers)
+    _add_setting_command(subparsers)
+    _add_source_command(subparsers)
     _add_radar_command(subparsers)
     _add_status_command(subparsers)
     _add_doctor_command(subparsers)
@@ -103,6 +112,10 @@ def _dispatch(args) -> int:
         return _cmd_assemble(args)
     elif args.command == "style":
         return _cmd_style(args)
+    elif args.command == "setting":
+        return _cmd_setting(args)
+    elif args.command == "source":
+        return _cmd_source(args)
     elif args.command == "radar":
         return _cmd_radar(args)
     elif args.command == "goethe":
@@ -128,9 +141,13 @@ def _add_init_command(subparsers):
 
 
 def _add_goethe_command(subparsers):
-    """goethe 命令 - 交互式引导"""
-    p = subparsers.add_parser("goethe", help="交互式引导（推荐新手使用）")
-    p.add_argument("--novel-id", help="小说 ID（可选）")
+    """goethe 命令 - 长期会话规划入口"""
+    p = subparsers.add_parser(
+        "goethe",
+        help="长期会话规划入口：启动 Goethe 持续规划 shell",
+        description="长期会话规划入口：启动 Goethe 持续规划 shell。",
+    )
+    p.add_argument("--novel-id", help="小说 ID（默认从 novel_config.yaml 读取）")
 
 
 def _add_dante_command(subparsers):
@@ -202,13 +219,39 @@ def _add_style_command(subparsers):
     p = subparsers.add_parser("style", help="风格管理")
     sub = p.add_subparsers(dest="style_action")
 
-    extract = sub.add_parser("extract", help="提取参考风格")
-    extract.add_argument("ref_name", help="参考作品名")
-    extract.add_argument("--source", required=True, help="源文件路径")
+    extract = sub.add_parser("extract", help="从用户提供文本提取风格与设定")
+    extract.add_argument("source_id", help="来源 ID（写入 data/novels/{id}/data/sources/{source_id}/）")
+    extract.add_argument("--source", required=True, help="源文本路径")
     extract.add_argument("--chunk-size", type=int, default=30000, help="分块字数（默认30000）")
 
     synthesize = sub.add_parser("synthesize", help="合成风格")
     synthesize.add_argument("--novel-id", default="current", help="小说 ID")
+
+
+def _add_setting_command(subparsers):
+    """setting 命令"""
+    p = subparsers.add_parser("setting", help="设定来源管理")
+    sub = p.add_subparsers(dest="setting_action")
+
+    extract = sub.add_parser("extract", help="从用户提供文本提取设定与世界信息")
+    extract.add_argument("source_id", help="来源 ID（写入 data/novels/{id}/data/sources/{source_id}/）")
+    extract.add_argument("--source", required=True, help="源文本路径")
+    extract.add_argument("--chunk-size", type=int, default=30000, help="分块字数（默认30000）")
+
+
+def _add_source_command(subparsers):
+    """source 命令"""
+    p = subparsers.add_parser("source", help="来源文本 source pack 管理")
+    sub = p.add_subparsers(dest="source_action")
+
+    review = sub.add_parser("review", help="审阅提取后的 source pack")
+    review.add_argument("source_id", help="来源 ID")
+    review.add_argument("--novel-id", default="current", help="小说 ID（默认从 novel_config.yaml 读取）")
+
+    promote = sub.add_parser("promote", help="将 source pack 晋升到当前项目")
+    promote.add_argument("source_id", help="来源 ID")
+    promote.add_argument("--novel-id", default="current", help="小说 ID（默认从 novel_config.yaml 读取）")
+    promote.add_argument("--target", choices=["style", "setting", "world", "all"], default="all", help="晋升目标")
 
 
 def _add_radar_command(subparsers):
@@ -675,8 +718,35 @@ def _cmd_style(args) -> int:
         return 1
 
 
+def _cmd_setting(args) -> int:
+    """设定来源管理。"""
+    if args.setting_action == "extract":
+        return _run_source_extract(args, focus="setting")
+    logger.error("请指定 setting 子命令: extract")
+    return 1
+
+
+def _cmd_source(args) -> int:
+    """来源文本 source pack 管理。"""
+    if args.source_action == "review":
+        return _cmd_source_review(args)
+    if args.source_action == "promote":
+        return _cmd_source_promote(args)
+    logger.error("请指定 source 子命令: review, promote")
+    return 1
+
+
 def _cmd_style_synthesize(args) -> int:
-    """合成作品风格文档。"""
+    """合成作品级风格文档。
+
+    这一步不是再次调用 LLM 做“对话式风格导演”，而是把已经落盘的
+    风格来源重新编译成单份 ``data/style/composed.md``：
+
+    1. 读取作品自己的 ``fingerprint.yaml``
+    2. 读取当前 ``style_id`` 对应 source pack 下的 ``style/*.md``
+    3. 叠加 ``craft/`` 里的通用规则与禁用短语
+    4. 输出给 ContextBuilder / ChapterAssembler 消费的最终风格文档
+    """
     project_root = Path.cwd()
     config = _load_config(project_root)
     if not config and getattr(args, "novel_id", "current") == "current":
@@ -693,38 +763,51 @@ def _cmd_style_synthesize(args) -> int:
         return 1
 
     style_id = config.get("style_id", novel_id) if config else novel_id
-    style_dir = project_root / "data" / "novels" / novel_id / "data" / "style"
-    style_dir.mkdir(parents=True, exist_ok=True)
-    composed_path = style_dir / "composed.md"
-    composed_path.write_text(
-        _build_synthesized_style_document(project_root, novel_id, style_id),
-        encoding="utf-8",
+    from tools.style_synthesizer import synthesize_style_document
+
+    result = synthesize_style_document(project_root, novel_id, style_id)
+    logger.info(
+        f"合成风格文档已写入: {result['composed_path']} (mode={result['mode']})"
     )
-    logger.info(f"合成风格文档已写入: {composed_path}")
     return 0
 
 
 def _cmd_style_extract(args) -> int:
-    """从参考作品提取风格（AI批量提取）"""
+    """从用户提供文本提取风格与设定（AI 批量提取）。"""
+    return _run_source_extract(args, focus="style")
+
+
+def _extract_source_pack(
+    project_root: Path,
+    novel_id: str,
+    source_id: str,
+    source_file: Path,
+    *,
+    focus: str,
+    chunk_size: int = 30000,
+) -> dict[str, object]:
+    """共享的 source pack 提取实现，CLI 与 Goethe 共同复用。
+
+    这里负责“来源文本 -> source pack”的完整批处理流程：
+
+    1. 用 ``StyleExtractionPipeline`` 切块并初始化目录
+    2. 逐 chunk 调用 LLM 抽取 craft / author / novel 三层信号
+    3. 把每批结果写回 ``extraction/batch_results``
+    4. 刷新 ``source.md``、``setting_profile.md``、``style/*.md``
+
+    ``focus`` 只影响提取提示词偏向：更偏风格，或更偏设定。
+    """
     from tools.style_extraction_pipeline import StyleExtractionPipeline
     from tools.llm import LLMClient, LLMConfig, Message
 
-    source_file = Path(args.source)
-    if not source_file.exists():
-        logger.error(f"源文件不存在: {source_file}")
-        return 1
-
-    ref_name = args.ref_name
-    project_root = Path.cwd()
-
-    logger.info(f"初始化风格提取: {ref_name}")
+    logger.info(f"初始化来源文本提取: {source_id}")
     logger.info(f"源文件: {source_file}")
 
     pipeline = StyleExtractionPipeline(
         project_root=project_root,
-        novel_id="style_extraction",
-        source_name=ref_name,
-        chunk_size=args.chunk_size,
+        novel_id=novel_id,
+        source_name=source_id,
+        chunk_size=chunk_size,
     )
 
     try:
@@ -732,12 +815,19 @@ def _cmd_style_extract(args) -> int:
         logger.info(f"文本已切割为 {progress.total_chunks} 个chunk")
     except Exception as e:
         logger.error(f"准备失败: {e}")
-        return 1
+        return {
+            "ok": False,
+            "blocked": True,
+            "error": "prepare_failed",
+            "message": str(e),
+            "source_id": source_id,
+            "source_file": str(source_file),
+        }
 
     llm_config = LLMConfig.from_env()
     client = LLMClient(llm_config)
 
-    STYLE_ANALYSIS_PROMPT = """你是一位专业的文学风格分析师。请分析以下文本片段的风格特征。
+    STYLE_ANALYSIS_PROMPT = """你是一位专业的文学风格与世界设定分析师。请分析以下文本片段的可复用信号。
 
 分析要求：
 1. 提取【通用技法】：跨作品适用的写作技巧（叙述方式、结构技巧等）
@@ -753,6 +843,24 @@ def _cmd_style_extract(args) -> int:
 }
 
 只返回JSON，不要其他内容。"""
+
+    SETTING_ANALYSIS_PROMPT = """你是一位专业的小说设定分析师。请分析以下文本片段里的世界设定与组织信息，同时保留必要的风格线索。
+
+分析要求：
+1. 提取【通用技法】：跨作品适用的结构或表达技巧（可为空）
+2. 提取【作者风格】：可复用的叙述/语言倾向（可为空）
+3. 提取【作品设定】：世界前提、规则、组织、角色关系、时间线、约束条件
+
+输出格式（JSON）：
+{
+    "craft": ["技法1", "技法2", ...],
+    "author": ["风格1", "风格2", ...],
+    "novel": ["设定1", "设定2", ...],
+    "summary": "本片段核心发现（50字内）"
+}
+
+只返回JSON，不要其他内容。"""
+    analysis_prompt = SETTING_ANALYSIS_PROMPT if focus == "setting" else STYLE_ANALYSIS_PROMPT
 
     total_processed = 0
     for batch in progress.batches:
@@ -772,7 +880,7 @@ def _cmd_style_extract(args) -> int:
             chunk_text = chunk_text[:8000] + "..."
 
         messages = [
-            Message("system", STYLE_ANALYSIS_PROMPT),
+            Message("system", analysis_prompt),
             Message("user", f"请分析以下文本片段：\n\n{chunk_text}"),
         ]
 
@@ -805,7 +913,15 @@ def _cmd_style_extract(args) -> int:
 
     if total_processed == 0:
         logger.warning("没有处理任何chunk（可能都已完成）")
-        return 0
+        return {
+            "ok": True,
+            "blocked": False,
+            "next_action": "review_source_pack",
+            "source_id": source_id,
+            "source_root": str(pipeline.source_dir),
+            "processed_batches": 0,
+            "message": "没有处理任何chunk（可能都已完成）",
+        }
 
     logger.info(f"\n开始合并 {total_processed} 个chunk的发现...")
 
@@ -814,16 +930,59 @@ def _cmd_style_extract(args) -> int:
         logger.info(f"合并完成: 处理了 {merge_result['total_batches']} 个批次")
     except Exception as e:
         logger.error(f"合并失败: {e}")
+        return {
+            "ok": False,
+            "blocked": True,
+            "error": "merge_failed",
+            "message": str(e),
+            "source_id": source_id,
+            "source_root": str(pipeline.source_dir),
+        }
+
+    _refresh_source_pack_documents(project_root, novel_id, source_id)
+
+    logger.info(f"\n来源提取完成！共处理 {total_processed} 个chunk")
+    logger.info(f"结果保存在: data/novels/{novel_id}/data/sources/{source_id}/")
+
+    return {
+        "ok": True,
+        "blocked": False,
+        "next_action": "review_source_pack",
+        "source_id": source_id,
+        "source_root": str(pipeline.source_dir),
+        "processed_batches": total_processed,
+        "total_batches": merge_result.get("total_batches", total_processed),
+        "focus": focus,
+    }
+
+
+def _run_source_extract(args, *, focus: str) -> int:
+    """从用户提供文本提取 source pack。"""
+    source_file = Path(args.source)
+    if not source_file.exists():
+        logger.error(f"源文件不存在: {source_file}")
         return 1
 
-    logger.info(f"\n风格提取完成！共处理 {total_processed} 个chunk")
-    logger.info(f"结果保存在: data/styles/{ref_name}/")
+    source_id = args.source_id
+    project_root = Path.cwd()
+    config = _load_config(project_root)
+    novel_id = (config or {}).get("novel_id") or "current"
+    result = _extract_source_pack(
+        project_root,
+        novel_id,
+        source_id,
+        source_file,
+        focus=focus,
+        chunk_size=args.chunk_size,
+    )
+    if not result.get("ok", False):
+        return 1
 
     return 0
 
 
 def _cmd_goethe(args) -> int:
-    """交互式引导"""
+    """Goethe 长期会话规划入口。"""
     from tools.goethe import run_goethe
 
     return run_goethe()
@@ -1042,6 +1201,40 @@ def build_dante_tool_layers(project_root: Path) -> dict[str, object]:
     }
 
 
+def build_goethe_tool_layers(project_root: Path, novel_id: str | None = None) -> dict[str, object]:
+    """构建 Goethe 可直接消费的工具分层视图。"""
+    from tools.agent.goethe_actions import GoetheActionAdapter, GoethePlanningRuntime
+    from tools.agent.toolkits import GOETHE_ACTION_TOOLKIT, GOETHE_DIRECT_TOOLKIT
+
+    tool_executors = build_cli_tool_executors(project_root)
+    runtime = GoethePlanningRuntime(
+        project_root=project_root,
+        novel_id=(novel_id or ((_load_config(project_root) or {}).get("novel_id") or "current")),
+        tool_executors=tool_executors,
+    )
+    runtime.bind_source_pack_services(
+        review_renderer=_render_source_review,
+        style_promoter=_promote_source_style,
+        setting_promoter=_promote_source_setting,
+        world_promoter=_promote_source_world,
+    )
+    action_tool_executors = _build_goethe_action_executors(
+        runtime=runtime,
+        adapter_cls=GoetheActionAdapter,
+    )
+    return {
+        "tool_executors": tool_executors,
+        "direct_toolkit": GOETHE_DIRECT_TOOLKIT,
+        "action_toolkit": GOETHE_ACTION_TOOLKIT,
+        "direct_tool_executors": {
+            name: tool_executors[name]
+            for name in GOETHE_DIRECT_TOOLKIT
+            if name in tool_executors
+        },
+        "action_tool_executors": action_tool_executors,
+    }
+
+
 def _build_dante_action_executors(
     project_root: Path,
     *,
@@ -1091,6 +1284,102 @@ def _build_dante_action_executors(
             if _read_text_arg(args, "chapter_id", "chapter")
             else _missing_required_arg("run_chapter_preflight", "chapter_id")
         ),
+        "delegate_chapter_write": lambda args: (
+            adapter.delegate_chapter_write(
+                _read_text_arg(args, "chapter_id", "chapter"),
+                guidance=_read_text_arg(args, "guidance", "text", default=""),
+                target_words=_coerce_target_words(args.get("target_words")),
+            )
+            if _read_text_arg(args, "chapter_id", "chapter")
+            else _missing_required_arg("delegate_chapter_write", "chapter_id")
+        ),
+        "delegate_chapter_review": lambda args: (
+            adapter.delegate_chapter_review(
+                _read_text_arg(args, "chapter_id", "chapter"),
+                guidance=_read_text_arg(args, "guidance", "text", default=""),
+            )
+            if _read_text_arg(args, "chapter_id", "chapter")
+            else _missing_required_arg("delegate_chapter_review", "chapter_id")
+        ),
+    }
+
+
+def _build_goethe_action_executors(
+    *,
+    runtime,
+    adapter_cls,
+) -> dict[str, Callable[[dict], dict]]:
+    adapter = adapter_cls(runtime)
+
+    def _read_text_arg(args: dict, *keys: str, default: str = "") -> str:
+        for key in keys:
+            value = args.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text
+        return default
+
+    def _missing_required_arg(action: str, field_name: str) -> dict[str, object]:
+        return {
+            "action": action,
+            "ok": False,
+            "blocked": True,
+            "error": f"missing_{field_name}",
+            "message": f"缺少必需参数: {field_name}",
+            field_name: "",
+        }
+
+    return {
+        "summarize_ideation": lambda args: adapter.summarize_ideation(),
+        "generate_foundation_draft": lambda args: (
+            adapter.generate_foundation_draft(
+                _read_text_arg(args, "request_text", "text", "brief")
+            )
+            if _read_text_arg(args, "request_text", "text", "brief")
+            else _missing_required_arg("generate_foundation_draft", "request_text")
+        ),
+        "generate_character_draft": lambda args: (
+            adapter.generate_character_draft(
+                _read_text_arg(args, "request_text", "text", "brief")
+            )
+            if _read_text_arg(args, "request_text", "text", "brief")
+            else _missing_required_arg("generate_character_draft", "request_text")
+        ),
+        "generate_outline_draft": lambda args: (
+            adapter.generate_outline_draft(
+                _read_text_arg(args, "request_text", "text", "brief")
+            )
+            if _read_text_arg(args, "request_text", "text", "brief")
+            else _missing_required_arg("generate_outline_draft", "request_text")
+        ),
+        "extract_style_source": lambda args: (
+            adapter.extract_style_source(
+                _read_text_arg(args, "source_id", "source_name"),
+                _read_text_arg(args, "source", "source_file", "text"),
+            )
+        ),
+        "extract_setting_source": lambda args: (
+            adapter.extract_setting_source(
+                _read_text_arg(args, "source_id", "source_name"),
+                _read_text_arg(args, "source", "source_file", "text"),
+            )
+        ),
+        "review_source_pack": lambda args: (
+            adapter.review_source_pack(_read_text_arg(args, "source_id", "source_name"))
+            if _read_text_arg(args, "source_id", "source_name")
+            else _missing_required_arg("review_source_pack", "source_id")
+        ),
+        "promote_source_pack": lambda args: (
+            adapter.promote_source_pack(
+                _read_text_arg(args, "source_id", "source_name"),
+                target=_read_text_arg(args, "target", default="all"),
+            )
+            if _read_text_arg(args, "source_id", "source_name")
+            else _missing_required_arg("promote_source_pack", "source_id")
+        ),
+        "prepare_dante_handoff": lambda args: adapter.prepare_dante_handoff(),
     }
 
 
@@ -1142,6 +1431,7 @@ def _compose_style_profile(style_documents: dict, *, max_chars: int) -> str:
     labeled_keys = [
         ("summary", "风格摘要", 600),
         ("prompt_section", "风格指南", 800),
+        ("work.manifest", "风格合成清单", 1200),
         ("work.composed", "作品合成风格", 1200),
         ("work.fingerprint", "作品风格指纹", 800),
         ("craft.dialogue_craft", "对话技法", 700),
@@ -1149,18 +1439,22 @@ def _compose_style_profile(style_documents: dict, *, max_chars: int) -> str:
         ("craft.rhythm_craft", "节奏技法", 700),
         ("craft.humanization", "去模板化约束", 700),
         ("craft.ai_patterns", "AI痕迹规避", 700),
-        ("reference.summary", "参考风格摘要", 700),
-        ("reference.voice", "参考叙述声音", 700),
-        ("reference.language", "参考语言习惯", 700),
-        ("reference.rhythm", "参考节奏", 700),
-        ("reference.dialogue", "参考对话", 700),
-        ("reference.consistency", "参考一致性", 700),
+        ("source.summary", "提取风格摘要", 700),
+        ("source.voice", "提取叙述声音", 700),
+        ("source.language", "提取语言习惯", 700),
+        ("source.rhythm", "提取节奏", 700),
+        ("source.dialogue", "提取对话", 700),
+        ("source.consistency", "提取一致性", 700),
     ]
 
     parts: list[str] = []
     used: set[str] = set()
     for key, label, limit in labeled_keys:
-        value = str(style_documents.get(key, "")).strip()
+        raw_value = style_documents.get(key, "")
+        if key == "work.manifest":
+            value = render_style_manifest_summary(raw_value)
+        else:
+            value = str(raw_value).strip()
         if not value:
             continue
         used.add(key)
@@ -1780,6 +2074,17 @@ def _extract_markdown_list(text: str, heading: str) -> list[str]:
     return items
 
 
+def _extract_markdown_section_body(text: str, heading: str) -> str:
+    pattern = re.compile(
+        rf"^##\s+{re.escape(heading)}\s*$\n(.*?)(?=^\s*##\s+|\Z)",
+        re.MULTILINE | re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        return ""
+    return match.group(1).strip()
+
+
 def _extract_craft_headings(project_root: Path) -> list[str]:
     craft_dir = project_root / "craft"
     headings: list[str] = []
@@ -1800,8 +2105,15 @@ def _extract_craft_headings(project_root: Path) -> list[str]:
     return deduped[:12]
 
 
-def _load_reference_style_snippets(project_root: Path, style_id: str) -> dict[str, str]:
-    ref_dir = project_root / "data" / "reference_styles" / style_id
+def _load_source_style_snippets(project_root: Path, novel_id: str, style_id: str) -> dict[str, str]:
+    """读取当前 style source pack 的可复用风格摘录。
+
+    这里只取少量、短截断后的摘要片段，避免把完整来源文本再次注入到
+    最终风格文档里，既控制长度，也降低来源绑定内容泄漏到正文提示词的风险。
+    """
+    if not str(style_id).strip():
+        return {}
+    ref_dir = project_root / "data" / "novels" / novel_id / "data" / "sources" / style_id / "style"
     snippets: dict[str, str] = {}
     if not ref_dir.exists():
         return snippets
@@ -1836,6 +2148,14 @@ def _load_banned_phrases(project_root: Path) -> list[str]:
 
 
 def _build_synthesized_style_document(project_root: Path, novel_id: str, style_id: str) -> str:
+    """构造 ``data/style/composed.md`` 的最终文本。
+
+    这是当前风格系统的“编译步骤”：
+    - 作品自身风格指纹负责给出最稳定的长期风格约束
+    - source pack 提供用户样文里提取出的可复用信号
+    - craft 规则提供跨作品通用的写作护栏
+    - banned phrases 提供去敏与避坑清单
+    """
     style_dir = project_root / "data" / "novels" / novel_id / "data" / "style"
     fingerprint_path = style_dir / "fingerprint.yaml"
     try:
@@ -1843,7 +2163,7 @@ def _build_synthesized_style_document(project_root: Path, novel_id: str, style_i
     except Exception:
         fingerprint = {}
 
-    reference_snippets = _load_reference_style_snippets(project_root, style_id)
+    source_snippets = _load_source_style_snippets(project_root, novel_id, style_id)
     craft_rules = _extract_craft_headings(project_root)
     banned_phrases = _load_banned_phrases(project_root)
 
@@ -1851,8 +2171,8 @@ def _build_synthesized_style_document(project_root: Path, novel_id: str, style_i
         f"# 最终风格文档：{novel_id}",
         "",
         f"> 合成时间：{datetime.now().date().isoformat()}",
-        f"> 参考风格：{style_id or '无'}",
-        "> 来源：作品风格指纹 + craft/ + 参考风格摘录",
+        f"> 提取风格源：{style_id or '无'}",
+        "> 来源：作品风格指纹 + craft/ + 项目内提取风格",
         "",
         "## 作品风格指纹",
         f"- 叙述声音：{str(fingerprint.get('voice', '待定义')).strip() or '待定义'}",
@@ -1860,8 +2180,8 @@ def _build_synthesized_style_document(project_root: Path, novel_id: str, style_i
         f"- 节奏控制：{str(fingerprint.get('rhythm', '待定义')).strip() or '待定义'}",
     ]
 
-    if reference_snippets:
-        parts.extend(["", "## 参考风格摘录"])
+    if source_snippets:
+        parts.extend(["", "## 提取风格摘录"])
         label_map = {
             "summary": "摘要",
             "voice": "叙述声音",
@@ -1871,7 +2191,7 @@ def _build_synthesized_style_document(project_root: Path, novel_id: str, style_i
             "consistency": "一致性要求",
         }
         for key, label in label_map.items():
-            text = reference_snippets.get(key, "")
+            text = source_snippets.get(key, "")
             if text:
                 parts.extend(["", f"### {label}", text])
 
@@ -1884,6 +2204,535 @@ def _build_synthesized_style_document(project_root: Path, novel_id: str, style_i
         parts.extend(f"- {phrase}" for phrase in banned_phrases)
 
     return "\n".join(parts).strip() + "\n"
+
+
+def _source_root(project_root: Path, novel_id: str, source_id: str) -> Path:
+    return project_root / "data" / "novels" / novel_id / "data" / "sources" / source_id
+
+
+def _resolve_novel_id(project_root: Path, requested: str) -> str:
+    if requested and requested != "current":
+        return requested
+    config = _load_config(project_root) or {}
+    return str(config.get("novel_id", "")).strip()
+
+
+def _save_config(project_root: Path, config: dict) -> None:
+    config_path = project_root / "novel_config.yaml"
+    config_path.write_text(
+        yaml.safe_dump(config, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+def _normalize_findings_list(value) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _dedupe_preserve(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+    return result
+
+
+def _pick_signal_items(items: list[str], keywords: tuple[str, ...], limit: int, fallback: list[str]) -> list[str]:
+    matched = [item for item in items if any(keyword in item for keyword in keywords)]
+    if matched:
+        return matched[:limit]
+    return fallback[:limit]
+
+
+def _render_bullets(items: list[str], placeholder: str) -> str:
+    if not items:
+        return f"- {placeholder}"
+    return "\n".join(f"- {item}" for item in items)
+
+
+def _strip_top_heading(text: str) -> str:
+    lines = text.strip().splitlines()
+    if lines and lines[0].lstrip().startswith("#"):
+        lines = lines[1:]
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def _demote_headings(text: str) -> str:
+    demoted: list[str] = []
+    for line in text.splitlines():
+        if line.startswith("#"):
+            demoted.append("#" + line)
+        else:
+            demoted.append(line)
+    return "\n".join(demoted).strip()
+
+
+def _upsert_section(body: str, heading: str, content: str) -> str:
+    normalized = body.strip()
+    block = f"{heading}\n\n{content.strip()}"
+    if not normalized:
+        return block + "\n"
+
+    pattern = re.compile(
+        rf"(?ms)^{re.escape(heading)}\n.*?(?=^##\s+|\Z)"
+    )
+    if pattern.search(normalized):
+        return pattern.sub(block + "\n\n", normalized).strip() + "\n"
+    return normalized.rstrip() + "\n\n" + block + "\n"
+
+
+def _collect_source_findings(source_root: Path) -> dict[str, object]:
+    batch_dir = source_root / "extraction" / "batch_results"
+    craft: list[str] = []
+    author: list[str] = []
+    novel: list[str] = []
+    summaries: list[str] = []
+    batch_count = 0
+
+    if batch_dir.exists():
+        for path in sorted(batch_dir.glob("batch_*.yaml")):
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            findings = data.get("findings", {}) or {}
+            batch_count += 1
+            craft.extend(_normalize_findings_list(findings.get("craft")))
+            author.extend(_normalize_findings_list(findings.get("author")))
+            novel.extend(_normalize_findings_list(findings.get("novel")))
+            summary = str(findings.get("summary", "")).strip()
+            if summary:
+                summaries.append(summary)
+
+    return {
+        "craft": _dedupe_preserve(craft),
+        "author": _dedupe_preserve(author),
+        "novel": _dedupe_preserve(novel),
+        "summaries": _dedupe_preserve(summaries),
+        "batch_count": batch_count,
+    }
+
+
+def _refresh_source_pack_documents(project_root: Path, novel_id: str, source_id: str) -> None:
+    """把批量提取结果刷新成可审阅的 source pack 文档。
+
+    批处理阶段保存的是机器友好的 batch yaml；这里把它们重新汇总成人和
+    agent 都能直接审阅的单源文档：
+    - ``source.md``：来源说明
+    - ``setting_profile.md``：设定提要
+    - ``style/*.md``：风格侧候选信号
+    """
+    source_root = _source_root(project_root, novel_id, source_id)
+    findings = _collect_source_findings(source_root)
+
+    craft = findings["craft"] if isinstance(findings["craft"], list) else []
+    author = findings["author"] if isinstance(findings["author"], list) else []
+    novel = findings["novel"] if isinstance(findings["novel"], list) else []
+    summaries = findings["summaries"] if isinstance(findings["summaries"], list) else []
+
+    source_summary = summaries[0] if summaries else f"{source_id} 的提取来源说明。"
+    source_meta = {
+        "id": source_id,
+        "kind": "source",
+        "source_type": "user_supplied_text",
+        "legal": "user_provided",
+        "usage": "style_and_setting_reference",
+        "status": "extracted",
+        "detail_refs": ["summary", "usage_notes", "promotion_notes"],
+        "summary": source_summary,
+    }
+    source_body = (
+        "# 来源说明\n\n"
+        "## summary\n\n"
+        f"{source_summary}\n\n"
+        "## usage_notes\n\n"
+        "- 只提取可复用的风格和设定组织方式。\n"
+        "- 不直接照搬来源专名、桥段、角色口头禅或签名式表达。\n\n"
+        "## promotion_notes\n\n"
+        "- 可把 style 侧晋升为当前项目的 style_id。\n"
+        "- 可把 setting_profile 中经人工确认的内容晋升到 foundation。\n"
+    )
+    source_root.mkdir(parents=True, exist_ok=True)
+    (source_root / "source.md").write_text(
+        compose_toml_document(source_meta, source_body),
+        encoding="utf-8",
+    )
+
+    premise_items = summaries[:3] or novel[:3]
+    rules_items = _pick_signal_items(
+        novel,
+        ("规则", "限制", "代价", "必须", "不能", "体系", "机制", "异常"),
+        8,
+        novel,
+    )
+    factions_items = _pick_signal_items(
+        novel,
+        ("组织", "公司", "部门", "门派", "势力", "阵营", "论坛"),
+        6,
+        [],
+    )
+    characters_items = _pick_signal_items(
+        novel,
+        ("角色", "主角", "人物", "同事", "上司", "伙伴", "敌人"),
+        6,
+        [],
+    )
+    timeline_items = _pick_signal_items(
+        novel,
+        ("过去", "曾经", "后来", "之前", "现在", "阶段", "时间", "事件"),
+        6,
+        [],
+    )
+
+    setting_meta = {
+        "id": source_id,
+        "kind": "setting_profile",
+        "status": "extracted",
+        "detail_refs": ["premise", "rules", "factions", "characters", "timeline", "promotion_notes"],
+        "summary": premise_items[0] if premise_items else f"{source_id} 的设定提要。",
+    }
+    setting_body = (
+        "# 设定提要\n\n"
+        "## premise\n\n"
+        f"{_render_bullets(premise_items, '（待补充）')}\n\n"
+        "## rules\n\n"
+        f"{_render_bullets(rules_items, '（待补充）')}\n\n"
+        "## factions\n\n"
+        f"{_render_bullets(factions_items, '（待补充）')}\n\n"
+        "## characters\n\n"
+        f"{_render_bullets(characters_items, '（待补充）')}\n\n"
+        "## timeline\n\n"
+        f"{_render_bullets(timeline_items, '（待补充）')}\n\n"
+        "## promotion_notes\n\n"
+        "- 先人工审阅，再决定是否晋升到 foundation 或 world 文档。\n"
+        "- 专有名词和来源绑定内容默认只保留为灵感记录。\n"
+    )
+    (source_root / "setting_profile.md").write_text(
+        compose_toml_document(setting_meta, setting_body),
+        encoding="utf-8",
+    )
+
+    style_dir = source_root / "style"
+    style_dir.mkdir(parents=True, exist_ok=True)
+    reusable = _dedupe_preserve(author + craft)
+    bound = novel[:10]
+    (style_dir / "summary.md").write_text(
+        "# 风格总结\n\n"
+        f"> 来源 ID: {source_id}\n\n"
+        "## summary\n\n"
+        f"{source_summary}\n\n"
+        "## reusable_signals\n\n"
+        f"{_render_bullets(reusable[:12], '（待补充）')}\n\n"
+        "## source_bound_signals\n\n"
+        f"{_render_bullets(bound, '（待补充）')}\n\n"
+        "## extraction_notes\n\n"
+        f"- 已处理批次：{findings.get('batch_count', 0)}\n",
+        encoding="utf-8",
+    )
+    (style_dir / "voice.md").write_text(
+        "# 叙述声音 (Voice)\n\n## 候选信号\n\n"
+        f"{_render_bullets(_pick_signal_items(author, ('视角', '叙述', '旁白', '口吻', '独白'), 8, author), '（待补充）')}\n",
+        encoding="utf-8",
+    )
+    (style_dir / "language.md").write_text(
+        "# 语言风格 (Language)\n\n## 候选信号\n\n"
+        f"{_render_bullets(_pick_signal_items(reusable, ('句', '词', '比喻', '语言', '用词', '口语'), 10, reusable), '（待补充）')}\n",
+        encoding="utf-8",
+    )
+    (style_dir / "rhythm.md").write_text(
+        "# 节奏风格 (Rhythm)\n\n## 候选信号\n\n"
+        f"{_render_bullets(_pick_signal_items(reusable, ('节奏', '段落', '推进', '切换', '场景'), 10, reusable), '（待补充）')}\n",
+        encoding="utf-8",
+    )
+    (style_dir / "dialogue.md").write_text(
+        "# 对话风格 (Dialogue)\n\n## 候选信号\n\n"
+        f"{_render_bullets(_pick_signal_items(reusable, ('对话', '角色声音', '口头禅', '交流', '台词'), 10, reusable), '（待补充）')}\n",
+        encoding="utf-8",
+    )
+    (style_dir / "consistency.md").write_text(
+        "# 一致性规则 (Consistency)\n\n## 禁止直接搬运\n\n"
+        "- 不直接照搬来源中的专有名词、招牌桥段和签名式句法。\n\n"
+        "## 来源绑定内容\n\n"
+        f"{_render_bullets(bound, '（待补充）')}\n",
+        encoding="utf-8",
+    )
+
+
+def _render_source_review(project_root: Path, novel_id: str, source_id: str) -> str:
+    source_root = _source_root(project_root, novel_id, source_id)
+    source_path = source_root / "source.md"
+    setting_path = source_root / "setting_profile.md"
+    progress_path = source_root / "extraction" / "progress.json"
+    style_dir = source_root / "style"
+
+    progress = {}
+    if progress_path.exists():
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        except Exception:
+            progress = {}
+
+    parts = [f"# 来源审阅：{source_id}", ""]
+    if progress:
+        parts.extend(
+            [
+                f"- 状态: {progress.get('current_phase', 'unknown')}",
+                f"- 已完成: {progress.get('completed_count', 0)}",
+                f"- 待处理: {progress.get('pending_count', 0)}",
+                f"- 进度: {progress.get('progress_pct', 0)}%",
+                "",
+            ]
+        )
+
+    if source_path.exists():
+        parts.extend(
+            [
+                "## 来源说明",
+                render_indexed_document(source_path.read_text(encoding="utf-8"), max_chars=1200),
+                "",
+            ]
+        )
+    if setting_path.exists():
+        parts.extend(
+            [
+                "## 设定提要",
+                render_indexed_document(setting_path.read_text(encoding="utf-8"), max_chars=1400),
+                "",
+            ]
+        )
+
+    style_files = sorted(path.name for path in style_dir.glob("*.md")) if style_dir.exists() else []
+    if style_files:
+        parts.append("## 已生成风格文档")
+        parts.extend(f"- {name}" for name in style_files)
+        parts.append("")
+
+    return "\n".join(part for part in parts if part is not None).strip() + "\n"
+
+
+def _default_world_document_meta(doc_id: str, summary: str, detail_refs: list[str]) -> dict[str, object]:
+    return {
+        "id": doc_id,
+        "type": "world_document",
+        "summary": summary,
+        "detail_refs": detail_refs,
+    }
+
+
+def _update_world_document_section(
+    path: Path,
+    *,
+    title: str,
+    content: str,
+    default_heading: str,
+    default_meta: dict[str, object],
+) -> None:
+    if path.exists():
+        text = path.read_text(encoding="utf-8")
+        meta, body = parse_toml_front_matter(text)
+        current_meta = meta or default_meta
+        current_body = strip_front_matter_padding(body if meta else text)
+    else:
+        current_meta = default_meta
+        current_body = f"# {default_heading}\n\n"
+
+    updated_body = _upsert_section(current_body, title, content)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(compose_toml_document(current_meta, updated_body), encoding="utf-8")
+
+
+def _parse_named_source_item(item: str) -> tuple[str, str]:
+    text = item.strip()
+    for sep in ("：", ":", "——", "—", "-", "–"):
+        if sep in text:
+            left, right = text.split(sep, 1)
+            name = left.strip()
+            desc = right.strip()
+            if name:
+                return name, desc
+    return text, ""
+
+
+def _promote_source_entities(project_root: Path, novel_id: str, source_id: str, factions: list[str]) -> None:
+    entities_dir = project_root / "data" / "novels" / novel_id / "src" / "world" / "entities"
+    entities_dir.mkdir(parents=True, exist_ok=True)
+
+    for faction in factions:
+        name, description = _parse_named_source_item(faction)
+        if not name:
+            continue
+        entity_id = generate_id(name, "organization")
+        target = entities_dir / f"{entity_id}.md"
+        existing = target.read_text(encoding="utf-8") if target.exists() else ""
+        base = existing.strip() or f"# {name}\n\n{description or '（待补充）'}\n"
+        updated = _upsert_section(base, f"## 来源提取：{source_id}", description or "（待补充）")
+        normalized = normalize_world_entity_document(
+            updated,
+            fallback_id=entity_id,
+            fallback_name=name,
+            fallback_summary=description or f"{name}相关设定来源于 {source_id}。",
+            default_type="组织",
+            default_subtype="阵营",
+        )
+        target.write_text(normalized, encoding="utf-8")
+
+
+def _cmd_source_review(args) -> int:
+    project_root = Path.cwd()
+    novel_id = _resolve_novel_id(project_root, getattr(args, "novel_id", "current"))
+    if not novel_id:
+        logger.error("未找到 novel_config.yaml，请指定 --novel-id")
+        return 1
+
+    source_root = _source_root(project_root, novel_id, args.source_id)
+    if not source_root.exists():
+        logger.error(f"未找到来源 source pack: {source_root}")
+        return 1
+
+    print(_render_source_review(project_root, novel_id, args.source_id))
+    return 0
+
+
+def _promote_source_style(project_root: Path, novel_id: str, source_id: str) -> None:
+    """把 source pack 的 style 侧晋升为当前作品的激活风格源。"""
+    config = _load_config(project_root)
+    if not config:
+        raise RuntimeError("未找到 novel_config.yaml，请先运行 openwrite init")
+    config["style_id"] = source_id
+    _save_config(project_root, config)
+
+    style_dir = project_root / "data" / "novels" / novel_id / "data" / "style"
+    style_dir.mkdir(parents=True, exist_ok=True)
+    (style_dir / "composed.md").write_text(
+        _build_synthesized_style_document(project_root, novel_id, source_id),
+        encoding="utf-8",
+    )
+
+
+def _promote_source_setting(project_root: Path, novel_id: str, source_id: str) -> None:
+    """把 source pack 的设定提要并入 foundation。
+
+    这里先更新故事级基础设定，而不是直接拆散到所有 world 文档。
+    更细粒度的拆分由 ``_promote_source_world`` 负责。
+    """
+    from tools.story_planning import StoryPlanningStore
+
+    store = StoryPlanningStore(project_root, novel_id)
+    source_path = _source_root(project_root, novel_id, source_id) / "setting_profile.md"
+    if not source_path.exists():
+        raise RuntimeError(f"未找到 setting_profile.md: {source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+    meta, body = parse_toml_front_matter(text)
+    source_body = strip_front_matter_padding(body if meta else text)
+    promoted_body = _demote_headings(_strip_top_heading(source_body))
+
+    foundation_doc = store.load_story_document("foundation")
+    background_doc = store.load_story_document("background")
+    foundation_body = str(foundation_doc.get("body") or "").strip() or "# 基础设定\n\n（待补充）\n"
+    background_body = str(background_doc.get("body") or "").strip() or "# 故事背景\n\n（待补充）\n"
+
+    merged_foundation = _upsert_section(
+        foundation_body,
+        f"## 来源提取：{source_id}",
+        promoted_body or "（待补充）",
+    )
+    store.save_foundation_draft(background_body, merged_foundation)
+
+
+def _promote_source_world(project_root: Path, novel_id: str, source_id: str) -> None:
+    """把 source pack 中可结构化的世界信息拆进 world 文档。
+
+    当前只稳定晋升三类：
+    - rules -> ``src/world/rules.md``
+    - timeline -> ``src/world/timeline.md``
+    - factions -> ``src/world/entities/*.md``
+    """
+    source_path = _source_root(project_root, novel_id, source_id) / "setting_profile.md"
+    if not source_path.exists():
+        raise RuntimeError(f"未找到 setting_profile.md: {source_path}")
+
+    text = source_path.read_text(encoding="utf-8")
+    meta, body = parse_toml_front_matter(text)
+    source_body = strip_front_matter_padding(body if meta else text)
+
+    premise_body = _extract_markdown_section_body(source_body, "premise")
+    rules_items = _extract_markdown_list(source_body, "rules")
+    factions_items = _extract_markdown_list(source_body, "factions")
+    timeline_items = _extract_markdown_list(source_body, "timeline")
+
+    rules_lines: list[str] = []
+    if premise_body:
+        rules_lines.append("### premise")
+        rules_lines.append("")
+        rules_lines.append(premise_body)
+        rules_lines.append("")
+    if rules_items:
+        rules_lines.append("### rules")
+        rules_lines.append("")
+        rules_lines.extend(f"- {item}" for item in rules_items)
+        rules_lines.append("")
+    if rules_lines:
+        rules_content = "\n".join(line for line in rules_lines).strip()
+        _update_world_document_section(
+            project_root / "data" / "novels" / novel_id / "src" / "world" / "rules.md",
+            title=f"## 来源提取：{source_id}",
+            content=rules_content,
+            default_heading="世界规则",
+            default_meta=_default_world_document_meta(
+                "world_rules",
+                "作品底层规则与来源提取的世界规则补充。",
+                ["power_rules", "social_rules", "limits", "unknowns"],
+            ),
+        )
+
+    if timeline_items:
+        timeline_content = "\n".join(f"- {item}" for item in timeline_items)
+        _update_world_document_section(
+            project_root / "data" / "novels" / novel_id / "src" / "world" / "timeline.md",
+            title=f"## 来源提取：{source_id}",
+            content=timeline_content,
+            default_heading="时间线",
+            default_meta=_default_world_document_meta(
+                "world_timeline",
+                "作品关键时间线与来源提取事件记录。",
+                ["时间线"],
+            ),
+        )
+
+    if factions_items:
+        _promote_source_entities(project_root, novel_id, source_id, factions_items)
+
+
+def _cmd_source_promote(args) -> int:
+    project_root = Path.cwd()
+    novel_id = _resolve_novel_id(project_root, getattr(args, "novel_id", "current"))
+    if not novel_id:
+        logger.error("未找到 novel_config.yaml，请指定 --novel-id")
+        return 1
+
+    source_root = _source_root(project_root, novel_id, args.source_id)
+    if not source_root.exists():
+        logger.error(f"未找到来源 source pack: {source_root}")
+        return 1
+
+    try:
+        if args.target in ("style", "all"):
+            _promote_source_style(project_root, novel_id, args.source_id)
+        if args.target in ("setting", "all"):
+            _promote_source_setting(project_root, novel_id, args.source_id)
+        if args.target in ("world", "all"):
+            _promote_source_world(project_root, novel_id, args.source_id)
+    except Exception as exc:
+        logger.error(f"source promote 失败: {exc}")
+        return 1
+
+    logger.info(f"source promote 完成: {args.source_id} -> {args.target}")
+    return 0
 
 
 def _collect_sync_status(project_root: Path, novel_id: str) -> dict:

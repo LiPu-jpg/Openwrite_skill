@@ -57,6 +57,33 @@ class DanteActionAdapter:
         payload.update(result if isinstance(result, dict) else {})
         return payload
 
+    def delegate_chapter_write(
+        self,
+        chapter_id: str,
+        *,
+        guidance: str = "",
+        target_words: int = 0,
+    ) -> dict[str, Any]:
+        result = self.orchestrator.delegate_writing(
+            chapter_id,
+            guidance=guidance,
+            target_words=target_words,
+        )
+        payload = self._wrap("delegate_chapter_write", result)
+        payload.update(result if isinstance(result, dict) else {})
+        return payload
+
+    def delegate_chapter_review(
+        self,
+        chapter_id: str,
+        *,
+        guidance: str = "",
+    ) -> dict[str, Any]:
+        result = self.orchestrator.review_chapter(chapter_id, guidance=guidance)
+        payload = self._wrap("delegate_chapter_review", result)
+        payload.update(result if isinstance(result, dict) else {})
+        return payload
+
     def _wrap(self, action: str, result: Any) -> dict[str, Any]:
         if isinstance(result, OrchestratorResult):
             return {
